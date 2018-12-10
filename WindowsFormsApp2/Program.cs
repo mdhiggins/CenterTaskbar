@@ -5,6 +5,8 @@ using System.Windows.Forms;
 using System.Windows.Automation;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Threading;
+using System.Collections.Generic;
 
 namespace CenterTaskbar
 {
@@ -30,6 +32,9 @@ namespace CenterTaskbar
         //static String ReBarWindow32 = "ReBarWindow32";
         static String Shell_TrayWnd = "Shell_TrayWnd";
         static String Shell_SecondaryTrayWnd = "Shell_SecondaryTrayWnd";
+
+        Dictionary<String, bool> running = new Dictionary<String, bool>();
+        Dictionary<String, double> targets = new Dictionary<String, double>();
 
         [DllImport("user32.dll")]
         public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
@@ -59,10 +64,10 @@ namespace CenterTaskbar
             };
 
             UpdateAll();
+
             Automation.AddAutomationEventHandler(WindowPattern.WindowOpenedEvent, desktop, TreeScope.Subtree, OnAutomation);
             Automation.AddAutomationEventHandler(WindowPattern.WindowClosedEvent, desktop, TreeScope.Subtree, OnAutomation);
         }
-
 
         void Exit(object sender, EventArgs e)
         {
@@ -108,7 +113,17 @@ namespace CenterTaskbar
             }
 
             AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
+            if (tasklist == null)
+            {
+                Debug.WriteLine("Null values found, aborting reset");
+                return;
+            }
             AutomationElement tasklistcontainer = TreeWalker.ControlViewWalker.GetParent(tasklist);
+            if (tasklistcontainer == null)
+            {
+                Debug.WriteLine("Null values found, aborting reset");
+                return;
+            }
             IntPtr tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
 
             Rect listBounds = tasklist.Current.BoundingRectangle;
@@ -135,6 +150,10 @@ namespace CenterTaskbar
             AutomationElement node = element;
             do
             {
+                if (node == null)
+                {
+                    break;
+                }
                 elementParent = walker.GetParent(node);
                 Debug.WriteLine(elementParent.Current.ClassName);
                 Debug.WriteLine(elementParent.Current.BoundingRectangle.Width);
@@ -152,12 +171,19 @@ namespace CenterTaskbar
             Debug.WriteLine(lists.Count + " bar(s) detected");
             foreach (AutomationElement trayWnd in lists)
             {
-                if (reset) {
-                    Reset(trayWnd);
-                } else
+                new Thread(() =>
                 {
-                    Reposition(trayWnd);
-                }
+                    Thread.CurrentThread.IsBackground = true;
+                    Thread.Sleep(400); // Delay which gives times for resizing to finish
+                    if (reset)
+                    {
+                        Reset(trayWnd);
+                    }
+                    else
+                    {
+                        Reposition(trayWnd);
+                    }
+                }).Start();
             }
         }
 
@@ -165,9 +191,13 @@ namespace CenterTaskbar
         {
             Debug.WriteLine("Begin Reposition Calculation");
             AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
+            if (tasklist == null)
+            {
+                Debug.WriteLine("Null values found, aborting");
+                return;
+            }
             AutomationElement tasklistcontainer = TreeWalker.ControlViewWalker.GetParent(tasklist);
-
-            if (tasklist == null || tasklistcontainer == null)
+            if (tasklistcontainer == null)
             {
                 Debug.WriteLine("Null values found, aborting");
                 return;
@@ -236,13 +266,53 @@ namespace CenterTaskbar
 
             int oldWidth = (int)tasklistBounds.Width;
             int oldHeight = (int)tasklistBounds.Height;
- 
-            MoveWindow(tasklistPtr, relativeX(targetX, tasklistcontainer), 0, oldWidth, oldHeight, true);
+
+            double dx = targetX - tasklist.Current.BoundingRectangle.X;
+            targets[trayWnd.Current.ClassName] = targetX;
+            if (running.ContainsKey(trayWnd.Current.ClassName) && running[trayWnd.Current.ClassName]) {
+                Debug.WriteLine("Updating target while animation is running");
+                return;
+            }
+            running[trayWnd.Current.ClassName] = true;
+            int fps = 60;
+
+            // Animation Loop
+            while (Math.Abs(dx) >= 2)
+         
+            {
+                double v = safeVelocity(dx / (fps/6));
+                double x = tasklist.Current.BoundingRectangle.X + v;
+                if ((tasklist.Current.BoundingRectangle.X < targets[trayWnd.Current.ClassName] && x < tasklist.Current.BoundingRectangle.X) || (tasklist.Current.BoundingRectangle.X > targets[trayWnd.Current.ClassName] && x > tasklist.Current.BoundingRectangle.X)) {
+                    break;
+                }               
+                MoveWindow(tasklistPtr, relativeX(x, tasklistcontainer), 0, oldWidth, oldHeight, true);
+                Thread.Sleep(1000/fps);
+                dx = targets[trayWnd.Current.ClassName] - tasklist.Current.BoundingRectangle.X;
+                // Debug.WriteLine(x + "(" + tasklist.Current.BoundingRectangle.X + "), " + v + ", " + dx + " T: " + targets[trayWnd.Current.ClassName]);
+            }
+
+            MoveWindow(tasklistPtr, relativeX(targets[trayWnd.Current.ClassName], tasklistcontainer), 0, oldWidth, oldHeight, true);
+
+            running[trayWnd.Current.ClassName] = false;
 
             Debug.Write("Final X Position: ");
             Debug.WriteLine(tasklist.Current.BoundingRectangle.X);
-            Debug.Write((tasklist.Current.BoundingRectangle.X == targetX) ? "Move hit target": "Move missed target");
-            Debug.WriteLine(" (diff: " + Math.Abs(tasklist.Current.BoundingRectangle.X - targetX) + ")");
+            Debug.Write((tasklist.Current.BoundingRectangle.X == targets[trayWnd.Current.ClassName]) ? "Move hit target": "Move missed target");
+            Debug.WriteLine(" (diff: " + Math.Abs(tasklist.Current.BoundingRectangle.X - targets[trayWnd.Current.ClassName]) + ")");
+        }
+
+        private double safeVelocity(double v)
+        {
+            double minV = 2;
+            if (v > 0 && v < minV)
+            {
+                return minV;
+            }
+            else if (v < 0 && v > -minV)
+            {
+                return -minV;
+            }
+            return Math.Round(v);
         }
 
         private int relativeX(double x, AutomationElement parent)
