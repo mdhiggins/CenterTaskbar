@@ -10,9 +10,3 @@ Specifically it will monitor for
 
 * `WindowOpenedEvent`
 * `WindowClosedEvent`
-
-----
-## Threaded Usage
-This mode is invoked by specifying any command line argument. For example `CenterTaskbar.exe thread`
-
-This mode loops a background thread every 150ms to adjust the positioning. It tends to have slightly better aesthetics / animation than the default mode at the cost of more CPU usage
