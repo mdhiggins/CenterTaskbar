@@ -4,7 +4,8 @@ using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Automation;
 using System.Runtime.InteropServices;
-using System.Threading;
+//using System.Threading;
+using System.Diagnostics;
 
 namespace CenterTaskbar
 {
@@ -19,9 +20,7 @@ namespace CenterTaskbar
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            bool thread = (args.Length > 0);
-
-            Application.Run(new CustomApplicationContext(thread));
+            Application.Run(new CustomApplicationContext());
         }
     }
 
@@ -30,11 +29,10 @@ namespace CenterTaskbar
         private NotifyIcon trayIcon;
         static AutomationElement desktop = AutomationElement.RootElement;
         static AutomationElement tasklist = desktop.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, "MSTaskListWClass"));
-        static AutomationElement taskbar = desktop.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, "ReBarWindow32"));
+        static AutomationElement parent = TreeWalker.ControlViewWalker.GetParent(tasklist);
+        //static AutomationElement taskbar = desktop.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, "ReBarWindow32"));
 
-        Double padding = 2; // 2px space between ReBarWindow32 and MSTaskListWClass apparently
-        IntPtr tasklistPtr;
-        bool running = false;
+        private IntPtr tasklistPtr;
 
         [DllImport("user32.dll")]
         public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
@@ -47,19 +45,17 @@ namespace CenterTaskbar
             DESKTOPVERTRES = 117,
         }
 
-        public CustomApplicationContext(bool thread)
+        public CustomApplicationContext()
         {
-            String title = "CenterTaskbar Listening";
-            if (thread)
-            {
-                title = "CenterTaskbar Looping";
-            }
+            MenuItem header = new MenuItem("CenterTaskbar", Pass);
+            header.Enabled = false;
+
             // Setup Tray Icon
             trayIcon = new NotifyIcon()
             {
                 Icon = Properties.Resources.Icon1,
                 ContextMenu = new ContextMenu(new MenuItem[] {
-                new MenuItem(title, Pass),
+                header,
                 new MenuItem("Exit", Exit)
             }),
                 Visible = true
@@ -67,13 +63,16 @@ namespace CenterTaskbar
 
             tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
 
-            if (thread) {
-                Loop();
-            } else {
-                Reposition();
-                Automation.AddAutomationEventHandler(WindowPattern.WindowOpenedEvent, desktop, TreeScope.Subtree, OnAutomation);
-                Automation.AddAutomationEventHandler(WindowPattern.WindowClosedEvent, desktop, TreeScope.Subtree, OnAutomation);
+            if (SafetyCheck()) {
+                Debug.WriteLine("Hooked Automation Class Targets:");
+                Debug.WriteLine(desktop.Current.ClassName);
+                Debug.WriteLine(tasklist.Current.ClassName);
+                Debug.WriteLine(parent.Current.ClassName);
             }
+
+            Reposition();
+            Automation.AddAutomationEventHandler(WindowPattern.WindowOpenedEvent, desktop, TreeScope.Subtree, OnAutomation);
+            Automation.AddAutomationEventHandler(WindowPattern.WindowClosedEvent, desktop, TreeScope.Subtree, OnAutomation);
         }
 
         void Pass(object sender, EventArgs e)
@@ -84,7 +83,6 @@ namespace CenterTaskbar
         {
             // Hide tray icon, otherwise it will remain shown until user mouses over it
             trayIcon.Visible = false;
-            running = false;
             Reset();
             System.Windows.Forms.Application.Exit();
         }
@@ -92,13 +90,12 @@ namespace CenterTaskbar
         private void OnAutomation(object sender, AutomationEventArgs e)
         {
             // Windows changed, update position
-            Console.WriteLine("Property Changed");
             Reposition();
         }
 
         private bool SafetyCheck()
         {
-            if (desktop == null || tasklist == null || taskbar == null)
+            if (desktop == null || tasklist == null || parent == null)
             {
                 return false;
             }
@@ -114,9 +111,10 @@ namespace CenterTaskbar
 
             double ScreenScalingFactor = (float)PhysicalScreenHeight / (float)LogicalScreenHeight;
 
-            return ScreenScalingFactor; // 1.25 = 125%
+            return ScreenScalingFactor;
         }
 
+        /*
         private void Loop()
         {
             new Thread(new ThreadStart(this.LoopThread)).Start();
@@ -134,6 +132,7 @@ namespace CenterTaskbar
             }
             Reset();
         }
+        */
 
         private void Reset()
         {
@@ -143,13 +142,13 @@ namespace CenterTaskbar
             }
 
             Rect listBounds = tasklist.Current.BoundingRectangle;
-            Rect barBounds = taskbar.Current.BoundingRectangle;
-            Double deltax = listBounds.X - padding - barBounds.X;
+            Rect barBounds = parent.Current.BoundingRectangle;
+            Double deltax = Math.Abs(listBounds.X - barBounds.X);
 
-            if (Math.Abs(deltax) <= 1)
+            if (deltax <= 1)
             {
                 // Already positioned within margin of error, avoid the unneeded MoveWindow call
-                Console.WriteLine("Already positioned, ending");
+                Debug.WriteLine("Already positioned, ending to avoid the unneeded MoveWindow call. (DeltaX = " + deltax + ")");
                 return;
             }
 
@@ -162,14 +161,17 @@ namespace CenterTaskbar
 
         private void Reposition()
         {
+            Debug.WriteLine("Begin Reposition Calculation");
             if (!SafetyCheck())
             {
+                Debug.WriteLine("Failed safety check, aborting");
                 return;
             }
 
             AutomationElementCollection children = tasklist.FindAll(TreeScope.Children, System.Windows.Automation.Condition.TrueCondition);
             if (children == null || children.Count < 1)
             {
+                Debug.WriteLine("Failed to find any icons, aborting");
                 return;
             }
 
@@ -181,44 +183,45 @@ namespace CenterTaskbar
             Double width = last.Current.BoundingRectangle.Right - first.Current.BoundingRectangle.Left;
             width = width / getScalingFactor();
 
-            double targetX = Math.Round((screenWidth / 2) - (width / 2));
-
-            Console.Write("Screen width: ");
-            Console.WriteLine(screenWidth);
-            Console.Write("Total width: ");
-            Console.WriteLine(width);
-            Console.Write("Target X: ");
-            Console.WriteLine(targetX);
+            double targetX = Math.Round((screenWidth - width) / 2);
+            Debug.Write("Desktop width: ");
+            Debug.WriteLine(desktop.Current.BoundingRectangle.Width);
+            Debug.Write("Screen width: ");
+            Debug.WriteLine(screenWidth);
+            Debug.Write("Total icon width: ");
+            Debug.WriteLine(width);
+            Debug.Write("Target abs X position: ");
+            Debug.WriteLine(targetX);
+            Debug.Write("Calculated Total Width: ");
+            Debug.WriteLine(Math.Round(targetX + width + targetX));
 
             Rect listBounds = tasklist.Current.BoundingRectangle;
-            Rect barBounds = taskbar.Current.BoundingRectangle;
-            Double deltax = targetX - (listBounds.X);
+            Rect parentBounds = parent.Current.BoundingRectangle;
+            Double deltax = Math.Abs(targetX - listBounds.X);
 
-            //Console.WriteLine(deltax);
-
-            if (Math.Abs(deltax) <= 1)
+            // Previous bounds check
+            if (deltax <= 1)
             {
                 // Already positioned within margin of error, avoid the unneeded MoveWindow call
-                Console.WriteLine("Already positioned, ending");
+                Debug.WriteLine("Already positioned, ending to avoid the unneeded MoveWindow call (DeltaX = " + deltax + ")");
                 return; 
             }
 
-            Console.Write("Right Bar Bounds: ");
-            Console.WriteLine(barBounds.Right);
-            double safeRight = screenWidth - barBounds.Right;
-            Console.WriteLine(safeRight);
+            // Right bounds check
+            double safeRight = screenWidth - parentBounds.Right;
             if ((targetX + width) > (screenWidth - safeRight))
             {
                 // Shift off center when the bar is too big
-                Console.WriteLine("Shifting off center, too big");
+                Debug.WriteLine("Shifting off center, too big and hitting right boundary (" + (targetX + width) + " > " + (screenWidth - safeRight) + ")");
                 double extra = (targetX + listBounds.Width) - (screenWidth - safeRight);
                 targetX -= extra;
             }
 
-            if (targetX <= (barBounds.X + padding))
+            // Left bounds check
+            if (targetX <= (parentBounds.X))
             {
                 // Prevent X position ending up beyond the normal left aligned position
-                Console.WriteLine("Target is more left than left aligned default, resetting");
+                Debug.WriteLine("Target is more left than left aligned default, left aligning (" + targetX + " <= " + parentBounds.X + ")");
                 Reset();
             }
 
@@ -227,17 +230,19 @@ namespace CenterTaskbar
  
             MoveWindow(tasklistPtr, relativeX(targetX), 0, oldWidth, oldHeight, true);
 
-            Console.Write("Final Position: ");
-            Console.WriteLine(tasklist.Current.BoundingRectangle.X);
+            Debug.Write("Final X Position: ");
+            Debug.WriteLine(tasklist.Current.BoundingRectangle.X);
+            Debug.WriteLine((tasklist.Current.BoundingRectangle.X == targetX) ? "Move hit target": "Move missed target");
         }
 
         private int relativeX(double x)
         {
-            Rect barBounds = taskbar.Current.BoundingRectangle;
-            Double newPos = x - barBounds.X - padding; // MoveWindow uses relative positioning
+            Rect barBounds = parent.Current.BoundingRectangle;
+            Double newPos = x - barBounds.X;
 
             if (newPos < 0)
             {
+                Debug.WriteLine("Relative position < 0, adjusting to 0 (Previous: " + newPos + ")");
                 newPos = 0;
             }
 
