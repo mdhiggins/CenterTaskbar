@@ -168,6 +168,11 @@ namespace CenterTaskbar
         {
             OrCondition condition = new OrCondition(new PropertyCondition(AutomationElement.ClassNameProperty, Shell_TrayWnd), new PropertyCondition(AutomationElement.ClassNameProperty, Shell_SecondaryTrayWnd));
             AutomationElementCollection lists = desktop.FindAll(TreeScope.Children, condition);
+            if (lists == null)
+            {
+                Debug.WriteLine("Null values found, aborting");
+                return;
+            }
             Debug.WriteLine(lists.Count + " bar(s) detected");
             foreach (AutomationElement trayWnd in lists)
             {
