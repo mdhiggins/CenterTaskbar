@@ -83,15 +83,6 @@ namespace CenterTaskbar
             UpdateAll();
         }
 
-        private bool SafetyCheck()
-        {
-            if (desktop == null)
-            {
-                return false;
-            }
-            return true;
-        }
-
         private double getScalingFactor()
         {
             Graphics g = Graphics.FromHwnd(IntPtr.Zero);
@@ -107,11 +98,6 @@ namespace CenterTaskbar
 
         private void Reset(AutomationElement trayWnd)
         {
-            if (!SafetyCheck())
-            {
-                return;
-            }
-
             AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
             if (tasklist == null)
             {
@@ -176,19 +162,18 @@ namespace CenterTaskbar
             Debug.WriteLine(lists.Count + " bar(s) detected");
             foreach (AutomationElement trayWnd in lists)
             {
-                new Thread(() =>
+                if (reset)
                 {
-                    Thread.CurrentThread.IsBackground = true;
-                    Thread.Sleep(400); // Delay which gives times for resizing to finish
-                    if (reset)
+                    Reset(trayWnd);
+                } else {
+                    new Thread(() =>
                     {
-                        Reset(trayWnd);
-                    }
-                    else
-                    {
+                        Thread.CurrentThread.IsBackground = true;
+                        Thread.Sleep(400); // Delay which gives times for resizing to finish
                         Reposition(trayWnd);
-                    }
-                }).Start();
+                    }).Start();
+                }
+
             }
         }
 
@@ -283,13 +268,9 @@ namespace CenterTaskbar
 
             // Animation Loop
             while (Math.Abs(dx) >= 2)
-         
             {
                 double v = safeVelocity(dx / (fps/6));
                 double x = tasklist.Current.BoundingRectangle.X + v;
-                if ((tasklist.Current.BoundingRectangle.X < targets[trayWnd.Current.ClassName] && x < tasklist.Current.BoundingRectangle.X) || (tasklist.Current.BoundingRectangle.X > targets[trayWnd.Current.ClassName] && x > tasklist.Current.BoundingRectangle.X)) {
-                    break;
-                }               
                 MoveWindow(tasklistPtr, relativeX(x, tasklistcontainer), 0, oldWidth, oldHeight, true);
                 Thread.Sleep(1000/fps);
                 dx = targets[trayWnd.Current.ClassName] - tasklist.Current.BoundingRectangle.X;
