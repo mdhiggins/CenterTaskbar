@@ -1,6 +1,6 @@
 # CenterTaskbar
 
-![Gif](https://user-images.githubusercontent.com/3608298/49763502-d431d980-fc9a-11e8-9ac5-a7d2c52ef1c4.gif)
+![Gif](https://user-images.githubusercontent.com/3608298/49901443-36234800-fe2f-11e8-89dd-9ab609a34fba.gif)
 
 ----
 ## Default Usage
