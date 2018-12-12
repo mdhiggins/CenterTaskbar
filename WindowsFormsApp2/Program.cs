@@ -113,19 +113,6 @@ namespace CenterTaskbar
             }
         }
 
-        private double getScalingFactor()
-        {
-            Graphics g = Graphics.FromHwnd(IntPtr.Zero);
-            IntPtr desktop = g.GetHdc();
-            int LogicalScreenHeight = GetDeviceCaps(desktop, (int)DeviceCap.VERTRES);
-            int PhysicalScreenHeight = GetDeviceCaps(desktop, (int)DeviceCap.DESKTOPVERTRES);
-
-            double ScreenScalingFactor = (float)PhysicalScreenHeight / (float)LogicalScreenHeight;
-            Debug.Write("Scaling factor: ");
-            Debug.WriteLine(ScreenScalingFactor);
-            return ScreenScalingFactor;
-        }
-
         private void Reset(AutomationElement trayWnd)
         {
             AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
@@ -224,27 +211,26 @@ namespace CenterTaskbar
             }
 
             IntPtr tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
-            double lastRight = last.Current.BoundingRectangle.Right;
+            double lastRight = last.Current.BoundingRectangle.Left; // Use the left bounds because there is an empty element as the last child with a nonzero width
 
             if ((lasts.ContainsKey(trayWndPtr) && lastRight == lasts[trayWndPtr]))
             {
-                // Its good, do nothing
                 Debug.WriteLine("Size/location unchanged, sleeping");
                 framerate = restingFramerate;
                 return;
             } else
             {
+                Debug.WriteLine("Size/location changed, recalculating center");
                 framerate = activeFramerate;
                 lasts[trayWndPtr] = lastRight;
                 AutomationElement first = TreeWalker.ControlViewWalker.GetFirstChild(tasklist);
                 if (last == null)
                 {
-                    Debug.WriteLine("Null values found for items, aborting");
+                    Debug.WriteLine("Null values found for last child item, aborting");
                     return;
                 }
 
-                
-                Double width = (last.Current.BoundingRectangle.Right - first.Current.BoundingRectangle.Left) / getScalingFactor();
+                Double width = (last.Current.BoundingRectangle.Left - first.Current.BoundingRectangle.Left) / getScalingFactor();
                 if (width <  0)
                 {
                     Debug.WriteLine("Width calculation failed");
@@ -259,12 +245,9 @@ namespace CenterTaskbar
                 }
 
                 Rect tasklistBounds = tasklist.Current.BoundingRectangle;
-                Rect tasklistContainerBounds = tasklistcontainer.Current.BoundingRectangle;
                 Rect trayBounds = trayWnd.Current.BoundingRectangle;
 
                 Double barWidth = trayWnd.Current.BoundingRectangle.Width;
-
-                Double xOffset = tasklistContainerBounds.X;
                 Double targetX = Math.Round((barWidth - width) / 2) + trayBounds.X;
 
                 Debug.Write("Bar width: ");
@@ -273,12 +256,8 @@ namespace CenterTaskbar
                 Debug.WriteLine(width);
                 Debug.Write("Target abs X position: ");
                 Debug.WriteLine(targetX);
-                Debug.Write("Reconstructed Width: ");
-                Debug.WriteLine(Math.Round(targetX + width + targetX - xOffset * 2));
 
-                Rect parentBounds = tasklistcontainer.Current.BoundingRectangle;
                 Double deltax = Math.Abs(targetX - tasklistBounds.X);
-
                 // Previous bounds check
                 if (deltax <= 1)
                 {
@@ -288,27 +267,28 @@ namespace CenterTaskbar
                 }
 
                 // Right bounds check
-                double safeRight = barWidth - parentBounds.Right;
-                if ((targetX + width) > (barWidth - safeRight))
+                int rightBounds = sideBoundary(false, tasklist);
+                if ((targetX + width) > (rightBounds))
                 {
                     // Shift off center when the bar is too big
-                    double extra = (targetX + width) - (barWidth - safeRight);
-                    Debug.WriteLine("Shifting off center, too big and hitting right boundary (" + (targetX + width) + " > " + (barWidth - safeRight) + ") // " + extra);
+                    double extra = (targetX + width) - rightBounds;
+                    Debug.WriteLine("Shifting off center, too big and hitting right boundary (" + (targetX + width) + " > " + rightBounds + ") // " + extra);
                     targetX -= extra;
                 }
 
                 // Left bounds check
-                if (targetX <= (parentBounds.X + ((tasklistcontainer.Current.ClassName == Shell_SecondaryTrayWnd) ? 96 : 0)))
+                int leftBounds = sideBoundary(true, tasklist);
+                if (targetX <= (leftBounds))
                 {
                     // Prevent X position ending up beyond the normal left aligned position
-                    Debug.WriteLine("Target is more left than left aligned default, left aligning (" + targetX + " <= " + parentBounds.X + ")");
+                    Debug.WriteLine("Target is more left than left aligned default, left aligning (" + targetX + " <= " + leftBounds + ")");
                     Reset(trayWnd);
                 }
 
-                int oldWidth = (int)tasklistBounds.Width;
+                int oldWidth = (int)tasklistBounds.Width; // Changing the width triggers a redraw which causes momentary visual glitches
                 int oldHeight = (int)tasklistBounds.Height;
 
-                MoveWindow(tasklistPtr, relativeX(targetX, tasklistcontainer), 0, oldWidth, oldHeight, true);
+                MoveWindow(tasklistPtr, relativeX(targetX, tasklist), 0, oldWidth, oldHeight, true);
 
                 Debug.Write("Final X Position: ");
                 Debug.WriteLine(tasklist.Current.BoundingRectangle.X);
@@ -317,12 +297,12 @@ namespace CenterTaskbar
             }
         }
 
-        private int relativeX(double x, AutomationElement parent)
+        private int relativeX(double x, AutomationElement element)
         {
-            Rect barBounds = parent.Current.BoundingRectangle;
-            Double adjustment = (parent.Current.ClassName == Shell_SecondaryTrayWnd) ? 96 : 0; // SecondaryTrayWnd seems to have padding of 96
-            Double newPos = x - barBounds.X - adjustment;
-            
+            int adjustment = sideBoundary(true, element);
+
+            Double newPos = x - adjustment;
+
             if (newPos < 0)
             {
                 Debug.WriteLine("Relative position < 0, adjusting to 0 (Previous: " + newPos + ")");
@@ -330,6 +310,40 @@ namespace CenterTaskbar
             }
 
             return (int)newPos;
+        }
+
+        private int sideBoundary(bool left, AutomationElement element)
+        {
+            Double adjustment = 0;
+            AutomationElement prevSibling = TreeWalker.ControlViewWalker.GetPreviousSibling(element);
+            AutomationElement nextSibling = TreeWalker.ControlViewWalker.GetNextSibling(element);
+            AutomationElement parent = TreeWalker.ControlViewWalker.GetParent(element);
+            if ((left && prevSibling != null))
+            {
+                adjustment = prevSibling.Current.BoundingRectangle.Right;
+            } else if (!left && nextSibling != null)
+            {
+                adjustment = nextSibling.Current.BoundingRectangle.Left;
+            }
+            else if (parent != null)
+            {
+                adjustment = left ? parent.Current.BoundingRectangle.Left: parent.Current.BoundingRectangle.Right;
+            }
+            Debug.WriteLine((left ? "Left" : "Right") + " side boundary calulcated at " + adjustment);
+            return (int)adjustment;
+        }
+
+        private double getScalingFactor()
+        {
+            Graphics g = Graphics.FromHwnd(IntPtr.Zero);
+            IntPtr desktop = g.GetHdc();
+            int LogicalScreenHeight = GetDeviceCaps(desktop, (int)DeviceCap.VERTRES);
+            int PhysicalScreenHeight = GetDeviceCaps(desktop, (int)DeviceCap.DESKTOPVERTRES);
+
+            double ScreenScalingFactor = (float)PhysicalScreenHeight / (float)LogicalScreenHeight;
+            Debug.Write("Scaling factor: ");
+            Debug.WriteLine(ScreenScalingFactor);
+            return ScreenScalingFactor;
         }
     }
 }
