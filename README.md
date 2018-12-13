@@ -8,6 +8,7 @@
 * Animated - resizes along with default windows animations
 * Performant - scales down refresh rate when not in use and ramps up when icons are adjusting
 * Multimonitor suppport
+* Vertical orientation support
 
 ## Default Usage
 Run the program and let it run in the background. It uses Windows UIAutomation to monitor for position changes and calculate a new position to center the taskbar items.
@@ -16,5 +17,4 @@ Run the program and let it run in the background. It uses Windows UIAutomation t
 Specify any number as the sole command line argument to set the refresh rate in hertz. Recommended to sync to your monitor refresh rate. When no changes are being made the refresh rate drops to 10 to minimize background CPU usage. Default 60
 
 ## Limitations
-* No vertical support yet
 * Multiple monitors must be same DPI
