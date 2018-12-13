@@ -115,6 +115,8 @@ namespace CenterTaskbar
 
         private void Reset(AutomationElement trayWnd)
         {
+            Debug.WriteLine("Begin Reset Calculation");
+
             AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
             if (tasklist == null)
             {
@@ -127,16 +129,20 @@ namespace CenterTaskbar
                 Debug.WriteLine("Null values found, aborting reset");
                 return;
             }
+
+            Rect trayBounds = trayWnd.Current.BoundingRectangle;
+            bool horizontal = (trayBounds.Width > trayBounds.Height);
+
             IntPtr tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
 
-            Rect listBounds = tasklist.Current.BoundingRectangle;
-            Rect barBounds = tasklistcontainer.Current.BoundingRectangle;
-            Double deltax = Math.Abs(listBounds.X - barBounds.X);
+            double listBounds = horizontal ? tasklist.Current.BoundingRectangle.X : tasklist.Current.BoundingRectangle.Y;
+            double barBounds = horizontal ? tasklistcontainer.Current.BoundingRectangle.X: tasklistcontainer.Current.BoundingRectangle.Y;
+            Double delta = Math.Abs(listBounds - barBounds);
 
-            if (deltax <= 1)
+            if (delta <= 1)
             {
                 // Already positioned within margin of error, avoid the unneeded MoveWindow call
-                Debug.WriteLine("Already positioned, ending to avoid the unneeded MoveWindow call. (DeltaX = " + deltax + ")");
+                Debug.WriteLine("Already positioned, ending to avoid the unneeded MoveWindow call. (Delta = " + delta + ")");
                 return;
             }
 
@@ -194,7 +200,7 @@ namespace CenterTaskbar
         private void PositionLoop(AutomationElement trayWnd)
         {
             Debug.WriteLine("Begin Reposition Calculation");
-            IntPtr trayWndPtr = (IntPtr)trayWnd.Current.NativeWindowHandle;
+ 
             AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
             if (tasklist == null)
             {
@@ -202,7 +208,6 @@ namespace CenterTaskbar
                 return;
             }
 
-            
             AutomationElement last = TreeWalker.ControlViewWalker.GetLastChild(tasklist);
             if (last == null)
             {
@@ -210,10 +215,13 @@ namespace CenterTaskbar
                 return;
             }
 
-            IntPtr tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
-            double lastRight = last.Current.BoundingRectangle.Left; // Use the left bounds because there is an empty element as the last child with a nonzero width
+            Rect trayBounds = trayWnd.Current.BoundingRectangle;
+            bool horizontal = (trayBounds.Width > trayBounds.Height);
 
-            if ((lasts.ContainsKey(trayWndPtr) && lastRight == lasts[trayWndPtr]))
+            IntPtr tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
+            double lastChildPos = (horizontal ? last.Current.BoundingRectangle.Left : last.Current.BoundingRectangle.Top); // Use the left/top bounds because there is an empty element as the last child with a nonzero width
+
+            if ((lasts.ContainsKey(tasklistPtr) && lastChildPos == lasts[tasklistPtr]))
             {
                 Debug.WriteLine("Size/location unchanged, sleeping");
                 framerate = restingFramerate;
@@ -222,7 +230,7 @@ namespace CenterTaskbar
             {
                 Debug.WriteLine("Size/location changed, recalculating center");
                 framerate = activeFramerate;
-                lasts[trayWndPtr] = lastRight;
+                lasts[tasklistPtr] = lastChildPos;
                 AutomationElement first = TreeWalker.ControlViewWalker.GetFirstChild(tasklist);
                 if (last == null)
                 {
@@ -230,76 +238,85 @@ namespace CenterTaskbar
                     return;
                 }
 
-                Double width = (last.Current.BoundingRectangle.Left - first.Current.BoundingRectangle.Left) / getScalingFactor();
-                if (width <  0)
+                Double size = (lastChildPos - (horizontal ? first.Current.BoundingRectangle.Left : first.Current.BoundingRectangle.Top)) / getScalingFactor();
+                if (size <  0)
                 {
-                    Debug.WriteLine("Width calculation failed");
+                    Debug.WriteLine("Size calculation failed");
                     return;
                 }
 
                 AutomationElement tasklistcontainer = TreeWalker.ControlViewWalker.GetParent(tasklist);
                 if (tasklistcontainer == null)
                 {
-                    Debug.WriteLine("Null values found, aborting");
+                    Debug.WriteLine("Null values found for parent, aborting");
                     return;
                 }
 
                 Rect tasklistBounds = tasklist.Current.BoundingRectangle;
-                Rect trayBounds = trayWnd.Current.BoundingRectangle;
 
-                Double barWidth = trayWnd.Current.BoundingRectangle.Width;
-                Double targetX = Math.Round((barWidth - width) / 2) + trayBounds.X;
+                Double barSize = horizontal ? trayWnd.Current.BoundingRectangle.Width : trayWnd.Current.BoundingRectangle.Height;
+                Double targetPos = Math.Round((barSize - size) / 2) + (horizontal ? trayBounds.X : trayBounds.Y);
 
-                Debug.Write("Bar width: ");
-                Debug.WriteLine(barWidth);
-                Debug.Write("Total icon width: ");
-                Debug.WriteLine(width);
-                Debug.Write("Target abs X position: ");
-                Debug.WriteLine(targetX);
+                Debug.Write("Bar size: ");
+                Debug.WriteLine(barSize);
+                Debug.Write("Total icon size: ");
+                Debug.WriteLine(size);
+                Debug.Write("Target abs " + (horizontal ? "X":"Y") + " position: ");
+                Debug.WriteLine(targetPos);
 
-                Double deltax = Math.Abs(targetX - tasklistBounds.X);
+                Double delta = Math.Abs(targetPos - (horizontal ? tasklistBounds.X : tasklistBounds.Y));
                 // Previous bounds check
-                if (deltax <= 1)
+                if (delta <= 1)
                 {
                     // Already positioned within margin of error, avoid the unneeded MoveWindow call
-                    Debug.WriteLine("Already positioned, ending to avoid the unneeded MoveWindow call (DeltaX = " + deltax + ")");
+                    Debug.WriteLine("Already positioned, ending to avoid the unneeded MoveWindow call (Delta: " + delta + ")");
                     return;
                 }
 
                 // Right bounds check
-                int rightBounds = sideBoundary(false, tasklist);
-                if ((targetX + width) > (rightBounds))
+                int rightBounds = sideBoundary(false, horizontal, tasklist);
+                if ((targetPos + size) > (rightBounds))
                 {
                     // Shift off center when the bar is too big
-                    double extra = (targetX + width) - rightBounds;
-                    Debug.WriteLine("Shifting off center, too big and hitting right boundary (" + (targetX + width) + " > " + rightBounds + ") // " + extra);
-                    targetX -= extra;
+                    double extra = (targetPos + size) - rightBounds;
+                    Debug.WriteLine("Shifting off center, too big and hitting right/bottom boundary (" + (targetPos + size) + " > " + rightBounds + ") // " + extra);
+                    targetPos -= extra;
                 }
 
                 // Left bounds check
-                int leftBounds = sideBoundary(true, tasklist);
-                if (targetX <= (leftBounds))
+                int leftBounds = sideBoundary(true, horizontal, tasklist);
+                if (targetPos <= (leftBounds))
                 {
                     // Prevent X position ending up beyond the normal left aligned position
-                    Debug.WriteLine("Target is more left than left aligned default, left aligning (" + targetX + " <= " + leftBounds + ")");
+                    Debug.WriteLine("Target is more left than left/top aligned default, left/top aligning (" + targetPos + " <= " + leftBounds + ")");
                     Reset(trayWnd);
                 }
 
                 int oldWidth = (int)tasklistBounds.Width; // Changing the width triggers a redraw which causes momentary visual glitches
                 int oldHeight = (int)tasklistBounds.Height;
 
-                MoveWindow(tasklistPtr, relativeX(targetX, tasklist), 0, oldWidth, oldHeight, true);
-
-                Debug.Write("Final X Position: ");
-                Debug.WriteLine(tasklist.Current.BoundingRectangle.X);
-                Debug.Write((tasklist.Current.BoundingRectangle.X == targetX) ? "Move hit target" : "Move missed target");
-                Debug.WriteLine(" (diff: " + Math.Abs(tasklist.Current.BoundingRectangle.X - targetX) + ")");
+                if (horizontal)
+                {
+                    MoveWindow(tasklistPtr, relativePos(targetPos, horizontal, tasklist), 0, oldWidth, oldHeight, true);
+                    Debug.Write("Final X Position: ");
+                    Debug.WriteLine(tasklist.Current.BoundingRectangle.X);
+                    Debug.Write((tasklist.Current.BoundingRectangle.X == targetPos) ? "Move hit target" : "Move missed target");
+                    Debug.WriteLine(" (diff: " + Math.Abs(tasklist.Current.BoundingRectangle.X - targetPos) + ")");
+                } else
+                {
+                    MoveWindow(tasklistPtr, 0, relativePos(targetPos, horizontal, tasklist), oldWidth, oldHeight, true);
+                    Debug.Write("Final Y Position: ");
+                    Debug.WriteLine(tasklist.Current.BoundingRectangle.Y);
+                    Debug.Write((tasklist.Current.BoundingRectangle.Y == targetPos) ? "Move hit target" : "Move missed target");
+                    Debug.WriteLine(" (diff: " + Math.Abs(tasklist.Current.BoundingRectangle.Y - targetPos) + ")");
+                }
+                
             }
         }
 
-        private int relativeX(double x, AutomationElement element)
+        private int relativePos(double x, bool horizontal, AutomationElement element)
         {
-            int adjustment = sideBoundary(true, element);
+            int adjustment = sideBoundary(true, horizontal, element);
 
             Double newPos = x - adjustment;
 
@@ -312,7 +329,7 @@ namespace CenterTaskbar
             return (int)newPos;
         }
 
-        private int sideBoundary(bool left, AutomationElement element)
+        private int sideBoundary(bool left, bool horizontal, AutomationElement element)
         {
             Double adjustment = 0;
             AutomationElement prevSibling = TreeWalker.ControlViewWalker.GetPreviousSibling(element);
@@ -320,16 +337,31 @@ namespace CenterTaskbar
             AutomationElement parent = TreeWalker.ControlViewWalker.GetParent(element);
             if ((left && prevSibling != null))
             {
-                adjustment = prevSibling.Current.BoundingRectangle.Right;
+                adjustment = (horizontal ? prevSibling.Current.BoundingRectangle.Right : prevSibling.Current.BoundingRectangle.Bottom);
             } else if (!left && nextSibling != null)
             {
-                adjustment = nextSibling.Current.BoundingRectangle.Left;
+                adjustment = (horizontal ? nextSibling.Current.BoundingRectangle.Left : nextSibling.Current.BoundingRectangle.Top);
             }
             else if (parent != null)
             {
-                adjustment = left ? parent.Current.BoundingRectangle.Left: parent.Current.BoundingRectangle.Right;
+                if (horizontal)
+                {
+                    adjustment = left ? parent.Current.BoundingRectangle.Left : parent.Current.BoundingRectangle.Right;
+                } else
+                {
+                    adjustment = left ? parent.Current.BoundingRectangle.Top : parent.Current.BoundingRectangle.Bottom;
+                }
+                
             }
-            Debug.WriteLine((left ? "Left" : "Right") + " side boundary calulcated at " + adjustment);
+
+            if (horizontal)
+            {
+                Debug.WriteLine((left ? "Left" : "Right") + " side boundary calulcated at " + adjustment);
+            } else
+            {
+                Debug.WriteLine((left ? "Top" : "Bottom") + " side boundary calulcated at " + adjustment);
+            }
+            
             return (int)adjustment;
         }
 
