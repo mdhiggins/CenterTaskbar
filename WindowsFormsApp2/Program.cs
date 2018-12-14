@@ -40,8 +40,6 @@ namespace CenterTaskbar
 
         Dictionary<IntPtr, double> lasts = new Dictionary<IntPtr, double>();
 
-        double primaryScale = 1.0;
-
         static int restingFramerate = 10;
         int framerate = restingFramerate;
         int activeFramerate = 60;
@@ -60,21 +58,6 @@ namespace CenterTaskbar
 
         public CustomApplicationContext(string[] args)
         {
-            MenuItem header = new MenuItem("CenterTaskbar", Exit);
-            header.Enabled = false;
-
-            // Setup Tray Icon
-            trayIcon = new NotifyIcon()
-            {
-                Icon = Properties.Resources.Icon1,
-                ContextMenu = new ContextMenu(new MenuItem[] {
-                header,
-                new MenuItem("Exit", Exit)
-            }),
-                Visible = true
-            };
-
-
             if (args.Length > 0)
             {
                 try
@@ -101,32 +84,22 @@ namespace CenterTaskbar
                 }
             }
 
-            primaryScale = getPrimaryScale();
+                MenuItem header = new MenuItem("CenterTaskbar " + activeFramerate + "/" + restingFramerate, Exit);
+            header.Enabled = false;
+
+            // Setup Tray Icon
+            trayIcon = new NotifyIcon()
+            {
+                Icon = Properties.Resources.Icon1,
+                ContextMenu = new ContextMenu(new MenuItem[] {
+                header,
+                new MenuItem("Scan for screens", Restart),
+                new MenuItem("Exit", Exit)
+            }),
+                Visible = true
+            };
 
             Start();
-        }
-
-        private double getPrimaryScale()
-        {
-            AutomationElement trayWnd = desktop.FindFirst(TreeScope.Children, new PropertyCondition(AutomationElement.ClassNameProperty, Shell_TrayWnd));
-            if (trayWnd == null)
-            {
-                Debug.WriteLine("Primary scale failed, returning 1.0");
-                return 1.0;
-            }
-            AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
-            if (tasklist == null)
-            {
-                Debug.WriteLine("Primary scale failed, returning 1.0");
-                return 1.0;
-            }
-            AutomationElement last = TreeWalker.ControlViewWalker.GetLastChild(tasklist);
-            if (last == null)
-            {
-                Debug.WriteLine("Primary scale failed, returning 1.0");
-                return 1.0;
-            }
-            return last.Current.BoundingRectangle.Height / trayWnd.Current.BoundingRectangle.Height;
         }
 
         void Exit(object sender, EventArgs e)
@@ -135,6 +108,15 @@ namespace CenterTaskbar
             trayIcon.Visible = false;
             ResetAll();
             System.Windows.Forms.Application.Exit();
+        }
+
+        void Restart(object sender, EventArgs e)
+        {
+            if (positionThread != null)
+            {
+                positionThread.Abort();
+            }
+            Start();
         }
 
         private void ResetAll()
@@ -196,27 +178,6 @@ namespace CenterTaskbar
             int newWidth = (int)bounds.Width;
             int newHeight = (int)bounds.Height;
             SetWindowPos(tasklistPtr, IntPtr.Zero, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_ASYNCWINDOWPOS);
-        }
-
-        private AutomationElement GetTopLevelWindow(AutomationElement element)
-        {
-            TreeWalker walker = TreeWalker.ControlViewWalker;
-            AutomationElement elementParent;
-            AutomationElement node = element;
-            do
-            {
-                if (node == null)
-                {
-                    break;
-                }
-                elementParent = walker.GetParent(node);
-                Debug.WriteLine(elementParent.Current.ClassName);
-                Debug.WriteLine(elementParent.Current.BoundingRectangle.Width);
-                if (elementParent == AutomationElement.RootElement) break;
-                node = elementParent;
-            }
-            while (true);
-            return node;
         }
 
         private void Start()
@@ -287,12 +248,6 @@ namespace CenterTaskbar
 
                 double scale = horizontal ? (last.Current.BoundingRectangle.Height / trayBounds.Height) : (last.Current.BoundingRectangle.Width / trayBounds.Width);
                 Debug.WriteLine("UI Scale: " + scale);
-                if (trayWnd.Current.ClassName == Shell_TrayWnd && scale != primaryScale)
-                {
-                    Debug.WriteLine("Primary scale changed from " + primaryScale + " to " + scale);
-                    primaryScale = scale;
-                }
-
                 double size = (lastChildPos - (horizontal ? first.Current.BoundingRectangle.Left : first.Current.BoundingRectangle.Top)) / scale;
                 if (size <  0)
                 {
