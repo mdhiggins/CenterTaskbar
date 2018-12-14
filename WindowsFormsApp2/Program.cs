@@ -41,7 +41,6 @@ namespace CenterTaskbar
         Dictionary<AutomationElement, AutomationElement> children = new Dictionary<AutomationElement, AutomationElement>();
         List<AutomationElement> bars = new List<AutomationElement>();
 
-        static int restingFramerate = 10;
         int activeFramerate = 60;
         Thread positionThread;
 
@@ -62,21 +61,7 @@ namespace CenterTaskbar
                     Debug.WriteLine(e.Message);
                 }
             }
-
-            if (args.Length > 1)
-            {
-                try
-                {
-                    restingFramerate = Int32.Parse(args[1]);
-                    Debug.WriteLine("Resting refresh rate: " + restingFramerate);
-                }
-                catch (FormatException e)
-                {
-                    Debug.WriteLine(e.Message);
-                }
-            }
-
-                MenuItem header = new MenuItem("CenterTaskbar " + activeFramerate + "/" + restingFramerate, Exit);
+                MenuItem header = new MenuItem("CenterTaskbar (" + activeFramerate + ")", Exit);
             header.Enabled = false;
 
             // Setup Tray Icon
@@ -178,6 +163,7 @@ namespace CenterTaskbar
                 foreach (AutomationElement trayWnd in lists)
                 {
                     AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
+                    Automation.AddStructureChangedEventHandler(tasklist, TreeScope.Subtree, OnUIAutomationEvent);
                     if (tasklist == null)
                     {
                         Debug.WriteLine("Null values found, aborting");
@@ -189,26 +175,41 @@ namespace CenterTaskbar
                 }
             }
 
+            Automation.AddAutomationEventHandler(WindowPattern.WindowOpenedEvent, desktop, TreeScope.Subtree, OnUIAutomationEvent);
+            Automation.AddAutomationEventHandler(WindowPattern.WindowClosedEvent, desktop, TreeScope.Subtree, OnUIAutomationEvent);
+            loop();
+        }
+
+        private void OnUIAutomationEvent(object src, AutomationEventArgs e)
+        {
+            if (!positionThread.IsAlive)
+            {
+                loop();
+            }
+        }
+
+        private void loop()
+        {
             positionThread = new Thread(() =>
             {
-                while (true)
+                int keepGoing = 0;
+                while (keepGoing < (activeFramerate / 5))
                 {
-                    int framerate = restingFramerate;
                     foreach (AutomationElement trayWnd in bars)
                     {
-                        int newFramerate = PositionLoop(trayWnd);
-                        if (newFramerate > framerate)
+                        if (!PositionLoop(trayWnd))
                         {
-                            framerate = newFramerate;
+                            keepGoing += 1;
                         }
                     }
-                    Thread.Sleep(1000 / framerate);
+                    Thread.Sleep(1000 / activeFramerate);
                 }
+                Debug.WriteLine("Thread ended due to inactivity, sleeping");
             });
             positionThread.Start();
         }
 
-        private int PositionLoop(AutomationElement trayWnd)
+        private bool PositionLoop(AutomationElement trayWnd)
         {
             Debug.WriteLine("Begin Reposition Calculation");
 
@@ -217,7 +218,7 @@ namespace CenterTaskbar
             if (last == null)
             {
                 Debug.WriteLine("Null values found for items, aborting");
-                return activeFramerate;
+                return true;
             }
 
             Rect trayBounds = trayWnd.Cached.BoundingRectangle;
@@ -229,7 +230,7 @@ namespace CenterTaskbar
             if ((lasts.ContainsKey(trayWnd) && lastChildPos == lasts[trayWnd]))
             {
                 Debug.WriteLine("Size/location unchanged, sleeping");
-                return restingFramerate;
+                return false;
             } else
             {
                 Debug.WriteLine("Size/location changed, recalculating center");
@@ -239,7 +240,7 @@ namespace CenterTaskbar
                 if (last == null)
                 {
                     Debug.WriteLine("Null values found for last child item, aborting");
-                    return activeFramerate;
+                    return true;
                 }
 
                 double scale = horizontal ? (last.Current.BoundingRectangle.Height / trayBounds.Height) : (last.Current.BoundingRectangle.Width / trayBounds.Width);
@@ -248,14 +249,14 @@ namespace CenterTaskbar
                 if (size <  0)
                 {
                     Debug.WriteLine("Size calculation failed");
-                    return activeFramerate;
+                    return true;
                 }
 
                 AutomationElement tasklistcontainer = TreeWalker.ControlViewWalker.GetParent(tasklist);
                 if (tasklistcontainer == null)
                 {
                     Debug.WriteLine("Null values found for parent, aborting");
-                    return activeFramerate;
+                    return true;
                 }
 
                 Rect tasklistBounds = tasklist.Current.BoundingRectangle;
@@ -276,7 +277,7 @@ namespace CenterTaskbar
                 {
                     // Already positioned within margin of error, avoid the unneeded MoveWindow call
                     Debug.WriteLine("Already positioned, ending to avoid the unneeded MoveWindow call (Delta: " + delta + ")");
-                    return restingFramerate;
+                    return false;
                 }
 
                 // Right bounds check
@@ -296,7 +297,7 @@ namespace CenterTaskbar
                     // Prevent X position ending up beyond the normal left aligned position
                     Debug.WriteLine("Target is more left than left/top aligned default, left/top aligning (" + targetPos + " <= " + leftBounds + ")");
                     Reset(trayWnd);
-                    return activeFramerate;
+                    return true;
                 }
 
                 IntPtr tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
@@ -318,7 +319,7 @@ namespace CenterTaskbar
                 }
                 lasts[trayWnd] = (horizontal ? last.Current.BoundingRectangle.Left : last.Current.BoundingRectangle.Top);
 
-                return activeFramerate;
+                return true;
             }
         }
 
