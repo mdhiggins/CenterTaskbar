@@ -26,6 +26,11 @@ namespace CenterTaskbar
 
     public class CustomApplicationContext : ApplicationContext
     {
+        private const int SWP_NOSIZE = 0x0001;
+        private const int SWP_NOZORDER = 0x0004;
+        private const int SWP_SHOWWINDOW = 0x0040;
+        private const int SWP_ASYNCWINDOWPOS = 0x4000;
+
         private NotifyIcon trayIcon;
         static AutomationElement desktop = AutomationElement.RootElement;
         static String MSTaskListWClass = "MSTaskListWClass";
@@ -35,13 +40,15 @@ namespace CenterTaskbar
 
         Dictionary<IntPtr, double> lasts = new Dictionary<IntPtr, double>();
 
+        double primaryScale = 1.0;
+
         static int restingFramerate = 10;
         int framerate = restingFramerate;
         int activeFramerate = 60;
         Thread positionThread;
 
-        [DllImport("user32.dll")]
-        public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, int uFlags);
 
         [DllImport("gdi32.dll")]
         static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
@@ -67,12 +74,13 @@ namespace CenterTaskbar
                 Visible = true
             };
 
-            
+
             if (args.Length > 0)
             {
                 try
                 {
                     activeFramerate = Int32.Parse(args[0]);
+                    Debug.WriteLine("Active refresh rate: " + activeFramerate);
                 }
                 catch (FormatException e)
                 {
@@ -80,7 +88,45 @@ namespace CenterTaskbar
                 }
             }
 
+            if (args.Length > 1)
+            {
+                try
+                {
+                    restingFramerate = Int32.Parse(args[1]);
+                    Debug.WriteLine("Resting refresh rate: " + restingFramerate);
+                }
+                catch (FormatException e)
+                {
+                    Debug.WriteLine(e.Message);
+                }
+            }
+
+            primaryScale = getPrimaryScale();
+
             Start();
+        }
+
+        private double getPrimaryScale()
+        {
+            AutomationElement trayWnd = desktop.FindFirst(TreeScope.Children, new PropertyCondition(AutomationElement.ClassNameProperty, Shell_TrayWnd));
+            if (trayWnd == null)
+            {
+                Debug.WriteLine("Primary scale failed, returning 1.0");
+                return 1.0;
+            }
+            AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
+            if (tasklist == null)
+            {
+                Debug.WriteLine("Primary scale failed, returning 1.0");
+                return 1.0;
+            }
+            AutomationElement last = TreeWalker.ControlViewWalker.GetLastChild(tasklist);
+            if (last == null)
+            {
+                Debug.WriteLine("Primary scale failed, returning 1.0");
+                return 1.0;
+            }
+            return last.Current.BoundingRectangle.Height / trayWnd.Current.BoundingRectangle.Height;
         }
 
         void Exit(object sender, EventArgs e)
@@ -137,7 +183,7 @@ namespace CenterTaskbar
 
             double listBounds = horizontal ? tasklist.Current.BoundingRectangle.X : tasklist.Current.BoundingRectangle.Y;
             double barBounds = horizontal ? tasklistcontainer.Current.BoundingRectangle.X: tasklistcontainer.Current.BoundingRectangle.Y;
-            Double delta = Math.Abs(listBounds - barBounds);
+            double delta = Math.Abs(listBounds - barBounds);
 
             if (delta <= 1)
             {
@@ -149,7 +195,7 @@ namespace CenterTaskbar
             Rect bounds = tasklist.Current.BoundingRectangle;
             int newWidth = (int)bounds.Width;
             int newHeight = (int)bounds.Height;
-            MoveWindow(tasklistPtr, 0, 0, newWidth, newHeight, true);
+            SetWindowPos(tasklistPtr, IntPtr.Zero, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_ASYNCWINDOWPOS);
         }
 
         private AutomationElement GetTopLevelWindow(AutomationElement element)
@@ -220,6 +266,7 @@ namespace CenterTaskbar
 
             IntPtr tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
             double lastChildPos = (horizontal ? last.Current.BoundingRectangle.Left : last.Current.BoundingRectangle.Top); // Use the left/top bounds because there is an empty element as the last child with a nonzero width
+            Debug.WriteLine("Last child position: " + lastChildPos);
 
             if ((lasts.ContainsKey(tasklistPtr) && lastChildPos == lasts[tasklistPtr]))
             {
@@ -238,7 +285,15 @@ namespace CenterTaskbar
                     return;
                 }
 
-                Double size = (lastChildPos - (horizontal ? first.Current.BoundingRectangle.Left : first.Current.BoundingRectangle.Top)) / getScalingFactor();
+                double scale = horizontal ? (last.Current.BoundingRectangle.Height / trayBounds.Height) : (last.Current.BoundingRectangle.Width / trayBounds.Width);
+                Debug.WriteLine("UI Scale: " + scale);
+                if (trayWnd.Current.ClassName == Shell_TrayWnd && scale != primaryScale)
+                {
+                    Debug.WriteLine("Primary scale changed from " + primaryScale + " to " + scale);
+                    primaryScale = scale;
+                }
+
+                double size = (lastChildPos - (horizontal ? first.Current.BoundingRectangle.Left : first.Current.BoundingRectangle.Top)) / scale;
                 if (size <  0)
                 {
                     Debug.WriteLine("Size calculation failed");
@@ -254,8 +309,8 @@ namespace CenterTaskbar
 
                 Rect tasklistBounds = tasklist.Current.BoundingRectangle;
 
-                Double barSize = horizontal ? trayWnd.Current.BoundingRectangle.Width : trayWnd.Current.BoundingRectangle.Height;
-                Double targetPos = Math.Round((barSize - size) / 2) + (horizontal ? trayBounds.X : trayBounds.Y);
+                double barSize = horizontal ? trayWnd.Current.BoundingRectangle.Width : trayWnd.Current.BoundingRectangle.Height;
+                double targetPos = Math.Round((barSize - size) / 2) + (horizontal ? trayBounds.X : trayBounds.Y);
 
                 Debug.Write("Bar size: ");
                 Debug.WriteLine(barSize);
@@ -264,7 +319,7 @@ namespace CenterTaskbar
                 Debug.Write("Target abs " + (horizontal ? "X":"Y") + " position: ");
                 Debug.WriteLine(targetPos);
 
-                Double delta = Math.Abs(targetPos - (horizontal ? tasklistBounds.X : tasklistBounds.Y));
+                double delta = Math.Abs(targetPos - (horizontal ? tasklistBounds.X : tasklistBounds.Y));
                 // Previous bounds check
                 if (delta <= 1)
                 {
@@ -292,25 +347,22 @@ namespace CenterTaskbar
                     Reset(trayWnd);
                 }
 
-                int oldWidth = (int)tasklistBounds.Width; // Changing the width triggers a redraw which causes momentary visual glitches
-                int oldHeight = (int)tasklistBounds.Height;
-
                 if (horizontal)
                 {
-                    MoveWindow(tasklistPtr, relativePos(targetPos, horizontal, tasklist), 0, oldWidth, oldHeight, true);
+                    SetWindowPos(tasklistPtr, IntPtr.Zero, (relativePos(targetPos, horizontal, tasklist)), 0, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_ASYNCWINDOWPOS);
                     Debug.Write("Final X Position: ");
                     Debug.WriteLine(tasklist.Current.BoundingRectangle.X);
                     Debug.Write((tasklist.Current.BoundingRectangle.X == targetPos) ? "Move hit target" : "Move missed target");
                     Debug.WriteLine(" (diff: " + Math.Abs(tasklist.Current.BoundingRectangle.X - targetPos) + ")");
                 } else
                 {
-                    MoveWindow(tasklistPtr, 0, relativePos(targetPos, horizontal, tasklist), oldWidth, oldHeight, true);
+                    SetWindowPos(tasklistPtr, IntPtr.Zero, 0, (relativePos(targetPos, horizontal, tasklist)), 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_ASYNCWINDOWPOS);
                     Debug.Write("Final Y Position: ");
                     Debug.WriteLine(tasklist.Current.BoundingRectangle.Y);
                     Debug.Write((tasklist.Current.BoundingRectangle.Y == targetPos) ? "Move hit target" : "Move missed target");
                     Debug.WriteLine(" (diff: " + Math.Abs(tasklist.Current.BoundingRectangle.Y - targetPos) + ")");
                 }
-                
+                lasts[tasklistPtr] = (horizontal ? last.Current.BoundingRectangle.Left : last.Current.BoundingRectangle.Top);
             }
         }
 
@@ -318,7 +370,7 @@ namespace CenterTaskbar
         {
             int adjustment = sideBoundary(true, horizontal, element);
 
-            Double newPos = x - adjustment;
+            double newPos = x - adjustment;
 
             if (newPos < 0)
             {
@@ -331,7 +383,7 @@ namespace CenterTaskbar
 
         private int sideBoundary(bool left, bool horizontal, AutomationElement element)
         {
-            Double adjustment = 0;
+            double adjustment = 0;
             AutomationElement prevSibling = TreeWalker.ControlViewWalker.GetPreviousSibling(element);
             AutomationElement nextSibling = TreeWalker.ControlViewWalker.GetNextSibling(element);
             AutomationElement parent = TreeWalker.ControlViewWalker.GetParent(element);
@@ -363,19 +415,6 @@ namespace CenterTaskbar
             }
             
             return (int)adjustment;
-        }
-
-        private double getScalingFactor()
-        {
-            Graphics g = Graphics.FromHwnd(IntPtr.Zero);
-            IntPtr desktop = g.GetHdc();
-            int LogicalScreenHeight = GetDeviceCaps(desktop, (int)DeviceCap.VERTRES);
-            int PhysicalScreenHeight = GetDeviceCaps(desktop, (int)DeviceCap.DESKTOPVERTRES);
-
-            double ScreenScalingFactor = (float)PhysicalScreenHeight / (float)LogicalScreenHeight;
-            Debug.Write("Scaling factor: ");
-            Debug.WriteLine(ScreenScalingFactor);
-            return ScreenScalingFactor;
         }
     }
 }
