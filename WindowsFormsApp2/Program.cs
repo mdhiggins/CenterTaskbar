@@ -37,23 +37,16 @@ namespace CenterTaskbar
         static String Shell_TrayWnd = "Shell_TrayWnd";
         static String Shell_SecondaryTrayWnd = "Shell_SecondaryTrayWnd";
 
-        Dictionary<IntPtr, double> lasts = new Dictionary<IntPtr, double>();
+        Dictionary<AutomationElement, double> lasts = new Dictionary<AutomationElement, double>();
+        Dictionary<AutomationElement, AutomationElement> children = new Dictionary<AutomationElement, AutomationElement>();
+        List<AutomationElement> bars = new List<AutomationElement>();
 
         static int restingFramerate = 10;
-        int framerate = restingFramerate;
         int activeFramerate = 60;
         Thread positionThread;
 
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, int uFlags);
-
-        [DllImport("gdi32.dll")]
-        static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
-        public enum DeviceCap
-        {
-            VERTRES = 10,
-            DESKTOPVERTRES = 117,
-        }
 
         public CustomApplicationContext(string[] args)
         {
@@ -120,21 +113,12 @@ namespace CenterTaskbar
 
         private void ResetAll()
         {
-            OrCondition condition = new OrCondition(new PropertyCondition(AutomationElement.ClassNameProperty, Shell_TrayWnd), new PropertyCondition(AutomationElement.ClassNameProperty, Shell_SecondaryTrayWnd));
-            AutomationElementCollection lists = desktop.FindAll(TreeScope.Children, condition);
-            if (lists == null)
-            {
-                Debug.WriteLine("Null values found, aborting");
-                return;
-            }
-            Debug.WriteLine(lists.Count + " bar(s) detected");
-
             if (positionThread != null)
             {
                 positionThread.Abort();
             }
 
-            foreach (AutomationElement trayWnd in lists)
+            foreach (AutomationElement trayWnd in bars)
             {
                 Reset(trayWnd);
             }
@@ -157,21 +141,12 @@ namespace CenterTaskbar
                 return;
             }
 
-            Rect trayBounds = trayWnd.Current.BoundingRectangle;
+            Rect trayBounds = trayWnd.Cached.BoundingRectangle;
             bool horizontal = (trayBounds.Width > trayBounds.Height);
 
             IntPtr tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
 
             double listBounds = horizontal ? tasklist.Current.BoundingRectangle.X : tasklist.Current.BoundingRectangle.Y;
-            double barBounds = horizontal ? tasklistcontainer.Current.BoundingRectangle.X: tasklistcontainer.Current.BoundingRectangle.Y;
-            double delta = Math.Abs(listBounds - barBounds);
-
-            if (delta <= 1)
-            {
-                // Already positioned within margin of error, avoid the unneeded MoveWindow call
-                Debug.WriteLine("Already positioned, ending to avoid the unneeded MoveWindow call. (Delta = " + delta + ")");
-                return;
-            }
 
             Rect bounds = tasklist.Current.BoundingRectangle;
             int newWidth = (int)bounds.Width;
@@ -181,76 +156,90 @@ namespace CenterTaskbar
 
         private void Start()
         {
-            Stopwatch stopwatch = new Stopwatch();
             OrCondition condition = new OrCondition(new PropertyCondition(AutomationElement.ClassNameProperty, Shell_TrayWnd), new PropertyCondition(AutomationElement.ClassNameProperty, Shell_SecondaryTrayWnd));
-            AutomationElementCollection lists = desktop.FindAll(TreeScope.Children, condition);
-            if (lists == null)
+            CacheRequest cacheRequest = new CacheRequest();
+            cacheRequest.Add(AutomationElement.NameProperty);
+            cacheRequest.Add(AutomationElement.BoundingRectangleProperty);
+
+            bars.Clear();
+            children.Clear();
+            lasts.Clear();
+
+            using (cacheRequest.Activate())
             {
-                Debug.WriteLine("Null values found, aborting");
-                return;
+                AutomationElementCollection lists = desktop.FindAll(TreeScope.Children, condition);
+                if (lists == null)
+                {
+                    Debug.WriteLine("Null values found, aborting");
+                    return;
+                }
+                Debug.WriteLine(lists.Count + " bar(s) detected");
+                lasts.Clear();
+                foreach (AutomationElement trayWnd in lists)
+                {
+                    AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
+                    if (tasklist == null)
+                    {
+                        Debug.WriteLine("Null values found, aborting");
+                        continue;
+                    }
+
+                    bars.Add(trayWnd);
+                    children.Add(trayWnd, tasklist);
+                }
             }
-            Debug.WriteLine(lists.Count + " bar(s) detected");
+
             positionThread = new Thread(() =>
             {
                 while (true)
                 {
-                    stopwatch.Start();
-                    foreach (AutomationElement trayWnd in lists)
+                    int framerate = restingFramerate;
+                    foreach (AutomationElement trayWnd in bars)
                     {
-                        PositionLoop(trayWnd);
+                        int newFramerate = PositionLoop(trayWnd);
+                        if (newFramerate > framerate)
+                        {
+                            framerate = newFramerate;
+                        }
                     }
-                    stopwatch.Stop();
-                    long elapsed = stopwatch.ElapsedMilliseconds;
-                    if (elapsed < (1000 / framerate))
-                    {
-                        Thread.Sleep((int)((1000 / framerate) - elapsed));
-                    }
-                    stopwatch.Reset();
+                    Thread.Sleep(1000 / framerate);
                 }
             });
             positionThread.Start();
         }
 
-        private void PositionLoop(AutomationElement trayWnd)
+        private int PositionLoop(AutomationElement trayWnd)
         {
             Debug.WriteLine("Begin Reposition Calculation");
- 
-            AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
-            if (tasklist == null)
-            {
-                Debug.WriteLine("Null values found, aborting");
-                return;
-            }
 
+            AutomationElement tasklist = children[trayWnd];
             AutomationElement last = TreeWalker.ControlViewWalker.GetLastChild(tasklist);
             if (last == null)
             {
                 Debug.WriteLine("Null values found for items, aborting");
-                return;
+                return activeFramerate;
             }
 
-            Rect trayBounds = trayWnd.Current.BoundingRectangle;
+            Rect trayBounds = trayWnd.Cached.BoundingRectangle;
             bool horizontal = (trayBounds.Width > trayBounds.Height);
 
-            IntPtr tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
             double lastChildPos = (horizontal ? last.Current.BoundingRectangle.Left : last.Current.BoundingRectangle.Top); // Use the left/top bounds because there is an empty element as the last child with a nonzero width
             Debug.WriteLine("Last child position: " + lastChildPos);
 
-            if ((lasts.ContainsKey(tasklistPtr) && lastChildPos == lasts[tasklistPtr]))
+            if ((lasts.ContainsKey(trayWnd) && lastChildPos == lasts[trayWnd]))
             {
                 Debug.WriteLine("Size/location unchanged, sleeping");
-                framerate = restingFramerate;
-                return;
+                return restingFramerate;
             } else
             {
                 Debug.WriteLine("Size/location changed, recalculating center");
-                framerate = activeFramerate;
-                lasts[tasklistPtr] = lastChildPos;
+                lasts[trayWnd] = lastChildPos;
+
                 AutomationElement first = TreeWalker.ControlViewWalker.GetFirstChild(tasklist);
                 if (last == null)
                 {
                     Debug.WriteLine("Null values found for last child item, aborting");
-                    return;
+                    return activeFramerate;
                 }
 
                 double scale = horizontal ? (last.Current.BoundingRectangle.Height / trayBounds.Height) : (last.Current.BoundingRectangle.Width / trayBounds.Width);
@@ -259,19 +248,19 @@ namespace CenterTaskbar
                 if (size <  0)
                 {
                     Debug.WriteLine("Size calculation failed");
-                    return;
+                    return activeFramerate;
                 }
 
                 AutomationElement tasklistcontainer = TreeWalker.ControlViewWalker.GetParent(tasklist);
                 if (tasklistcontainer == null)
                 {
                     Debug.WriteLine("Null values found for parent, aborting");
-                    return;
+                    return activeFramerate;
                 }
 
                 Rect tasklistBounds = tasklist.Current.BoundingRectangle;
 
-                double barSize = horizontal ? trayWnd.Current.BoundingRectangle.Width : trayWnd.Current.BoundingRectangle.Height;
+                double barSize = horizontal ? trayWnd.Cached.BoundingRectangle.Width : trayWnd.Cached.BoundingRectangle.Height;
                 double targetPos = Math.Round((barSize - size) / 2) + (horizontal ? trayBounds.X : trayBounds.Y);
 
                 Debug.Write("Bar size: ");
@@ -287,7 +276,7 @@ namespace CenterTaskbar
                 {
                     // Already positioned within margin of error, avoid the unneeded MoveWindow call
                     Debug.WriteLine("Already positioned, ending to avoid the unneeded MoveWindow call (Delta: " + delta + ")");
-                    return;
+                    return restingFramerate;
                 }
 
                 // Right bounds check
@@ -307,7 +296,10 @@ namespace CenterTaskbar
                     // Prevent X position ending up beyond the normal left aligned position
                     Debug.WriteLine("Target is more left than left/top aligned default, left/top aligning (" + targetPos + " <= " + leftBounds + ")");
                     Reset(trayWnd);
+                    return activeFramerate;
                 }
+
+                IntPtr tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
 
                 if (horizontal)
                 {
@@ -324,7 +316,9 @@ namespace CenterTaskbar
                     Debug.Write((tasklist.Current.BoundingRectangle.Y == targetPos) ? "Move hit target" : "Move missed target");
                     Debug.WriteLine(" (diff: " + Math.Abs(tasklist.Current.BoundingRectangle.Y - targetPos) + ")");
                 }
-                lasts[tasklistPtr] = (horizontal ? last.Current.BoundingRectangle.Left : last.Current.BoundingRectangle.Top);
+                lasts[trayWnd] = (horizontal ? last.Current.BoundingRectangle.Left : last.Current.BoundingRectangle.Top);
+
+                return activeFramerate;
             }
         }
 
