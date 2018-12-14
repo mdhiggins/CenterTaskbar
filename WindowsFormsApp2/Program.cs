@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Drawing;
 using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Automation;
@@ -182,6 +181,7 @@ namespace CenterTaskbar
 
         private void Start()
         {
+            Stopwatch stopwatch = new Stopwatch();
             OrCondition condition = new OrCondition(new PropertyCondition(AutomationElement.ClassNameProperty, Shell_TrayWnd), new PropertyCondition(AutomationElement.ClassNameProperty, Shell_SecondaryTrayWnd));
             AutomationElementCollection lists = desktop.FindAll(TreeScope.Children, condition);
             if (lists == null)
@@ -194,11 +194,18 @@ namespace CenterTaskbar
             {
                 while (true)
                 {
+                    stopwatch.Start();
                     foreach (AutomationElement trayWnd in lists)
                     {
                         PositionLoop(trayWnd);
                     }
-                    Thread.Sleep(1000 / framerate);
+                    stopwatch.Stop();
+                    long elapsed = stopwatch.ElapsedMilliseconds;
+                    if (elapsed < (1000 / framerate))
+                    {
+                        Thread.Sleep((int)((1000 / framerate) - elapsed));
+                    }
+                    stopwatch.Reset();
                 }
             });
             positionThread.Start();
