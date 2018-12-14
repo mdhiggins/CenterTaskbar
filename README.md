@@ -9,12 +9,12 @@
 * Performant - scales down refresh rate when not in use and ramps up when icons are adjusting
 * Multimonitor suppport
 * Vertical orientation support
+* Multiple DPI support
 
 ## Default Usage
 Run the program and let it run in the background. It uses Windows UIAutomation to monitor for position changes and calculate a new position to center the taskbar items.
 
 ## Command Line Args
-Specify any number as the sole command line argument to set the refresh rate in hertz. Recommended to sync to your monitor refresh rate. When no changes are being made the refresh rate drops to 10 to minimize background CPU usage. Default 60
+First command line argument sets the refresh rate in hertz during active icon changes Default 60. Recommended to sync to your monitor refresh rate. When no changes are being made the refresh rate drops to 10 to minimize background CPU usage. Use a second command line argument to change this value.
 
-## Limitations
-* Multiple monitors must be same DPI
+Example: `CenterTaskbar.exe 120 20` sets active refresh rate of 120 and resting monitor rate of 20
