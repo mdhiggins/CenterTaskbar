@@ -163,12 +163,12 @@ namespace CenterTaskbar
                 foreach (AutomationElement trayWnd in lists)
                 {
                     AutomationElement tasklist = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
-                    Automation.AddStructureChangedEventHandler(tasklist, TreeScope.Subtree, OnUIAutomationEvent);
                     if (tasklist == null)
                     {
                         Debug.WriteLine("Null values found, aborting");
                         continue;
                     }
+                    Automation.AddAutomationPropertyChangedEventHandler(tasklist, TreeScope.Element, OnUIAutomationEvent, AutomationElement.BoundingRectangleProperty);
 
                     bars.Add(trayWnd);
                     children.Add(trayWnd, tasklist);
@@ -237,9 +237,9 @@ namespace CenterTaskbar
                 lasts[trayWnd] = lastChildPos;
 
                 AutomationElement first = TreeWalker.ControlViewWalker.GetFirstChild(tasklist);
-                if (last == null)
+                if (first == null)
                 {
-                    Debug.WriteLine("Null values found for last child item, aborting");
+                    Debug.WriteLine("Null values found for first child item, aborting");
                     return true;
                 }
 
