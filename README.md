@@ -6,15 +6,18 @@
 ## Features
 * Dynamic - works regardless of number of icons, DPI scaling grouping, size. All padding is calculated
 * Animated - resizes along with default windows animations
-* Performant - scales down refresh rate when not in use and ramps up when icons are adjusting
+* Performant - sleeps when no resizing taking place to 0% CPU usage
 * Multimonitor suppport
 * Vertical orientation support
 * Multiple DPI support
 
-## Default Usage
+## Usage
 Run the program and let it run in the background. It uses Windows UIAutomation to monitor for position changes and calculate a new position to center the taskbar items.
 
 ## Command Line Args
-First command line argument sets the refresh rate in hertz during active icon changes Default 60. Recommended to sync to your monitor refresh rate. When no changes are being made the refresh rate drops to 10 to minimize background CPU usage. Use a second command line argument to change this value.
+First command line argument sets the refresh rate in hertz during active icon changes. Default `60`. Recommended to sync to your monitor refresh rate or higher. When no changes are being made program goes to sleep and awaits for events triggered by UIAutomation to restart the repositioning thread allowing it to drop to 0% CPU usage.
 
-Example: `CenterTaskbar.exe 120 20` sets active refresh rate of 120 and resting monitor rate of 20
+Specifically it will monitor for:
+* `WindowOpenedEvent`
+* `WindowClosedEvent`
+* `StructureChangedEvent`
