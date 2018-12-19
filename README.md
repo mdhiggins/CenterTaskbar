@@ -20,4 +20,4 @@ First command line argument sets the refresh rate in hertz during active icon ch
 Specifically it will monitor for:
 * `WindowOpenedEvent`
 * `WindowClosedEvent`
-* `StructureChangedEvent`
+* `AutomationPropertyChangedEvent: BoundingRectangleProperty`
