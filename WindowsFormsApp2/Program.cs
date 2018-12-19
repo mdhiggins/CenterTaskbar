@@ -40,8 +40,6 @@ namespace CenterTaskbar
         static String Shell_TrayWnd = "Shell_TrayWnd";
         static String Shell_SecondaryTrayWnd = "Shell_SecondaryTrayWnd";
 
-        MenuItem startup = new MenuItem("Start with Windows", ToggleStartup);
-
         Dictionary<AutomationElement, double> lasts = new Dictionary<AutomationElement, double>();
         Dictionary<AutomationElement, AutomationElement> children = new Dictionary<AutomationElement, AutomationElement>();
         List<AutomationElement> bars = new List<AutomationElement>();
@@ -66,9 +64,10 @@ namespace CenterTaskbar
                     Debug.WriteLine(e.Message);
                 }
             }
-                MenuItem header = new MenuItem("CenterTaskbar (" + activeFramerate + ")", Exit);
-            header.Enabled = false;
 
+            MenuItem header = new MenuItem("CenterTaskbar (" + activeFramerate + ")", Exit);
+            header.Enabled = false;
+            MenuItem startup = new MenuItem("Start with Windows", ToggleStartup);
             startup.Checked = IsApplicationInStatup();
 
             // Setup Tray Icon
@@ -87,7 +86,7 @@ namespace CenterTaskbar
             Start();
         }
 
-        public static void ToggleStartup(object sender, EventArgs e)
+        public void ToggleStartup(object sender, EventArgs e)
         {
             if (IsApplicationInStatup())
             {
@@ -100,24 +99,28 @@ namespace CenterTaskbar
             }
         }
 
-        public static bool IsApplicationInStatup()
+        public bool IsApplicationInStatup()
         {
             using (RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true))
             {
+                if (key == null) return false;
+
                 object value = key.GetValue(appName);
-                return (value != null);
+                if (value is String) return ((value as String).StartsWith("\"" + Application.ExecutablePath + "\""));
+
+                return false;
             }
         }
 
-        public static void AddApplicationToStartup()
+        public void AddApplicationToStartup()
         {
             using (RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true))
             {
-                key.SetValue(appName, "\"" + Application.ExecutablePath + "\"");
+                key.SetValue(appName, "\"" + Application.ExecutablePath + "\" " + activeFramerate);
             }
         }
 
-        public static void RemoveApplicationFromStartup()
+        public void RemoveApplicationFromStartup()
         {
             using (RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true))
             {
