@@ -2,6 +2,7 @@
 using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Automation;
+using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Threading;
@@ -25,6 +26,8 @@ namespace CenterTaskbar
 
     public class CustomApplicationContext : ApplicationContext
     {
+        public const String appName = "CenterTaskbar";
+
         private const int SWP_NOSIZE = 0x0001;
         private const int SWP_NOZORDER = 0x0004;
         private const int SWP_SHOWWINDOW = 0x0040;
@@ -36,6 +39,8 @@ namespace CenterTaskbar
         //static String ReBarWindow32 = "ReBarWindow32";
         static String Shell_TrayWnd = "Shell_TrayWnd";
         static String Shell_SecondaryTrayWnd = "Shell_SecondaryTrayWnd";
+
+        MenuItem startup = new MenuItem("Start with Windows", ToggleStartup);
 
         Dictionary<AutomationElement, double> lasts = new Dictionary<AutomationElement, double>();
         Dictionary<AutomationElement, AutomationElement> children = new Dictionary<AutomationElement, AutomationElement>();
@@ -64,6 +69,8 @@ namespace CenterTaskbar
                 MenuItem header = new MenuItem("CenterTaskbar (" + activeFramerate + ")", Exit);
             header.Enabled = false;
 
+            startup.Checked = IsApplicationInStatup();
+
             // Setup Tray Icon
             trayIcon = new NotifyIcon()
             {
@@ -71,12 +78,51 @@ namespace CenterTaskbar
                 ContextMenu = new ContextMenu(new MenuItem[] {
                 header,
                 new MenuItem("Scan for screens", Restart),
+                startup,
                 new MenuItem("Exit", Exit)
             }),
                 Visible = true
             };
 
             Start();
+        }
+
+        public static void ToggleStartup(object sender, EventArgs e)
+        {
+            if (IsApplicationInStatup())
+            {
+                RemoveApplicationFromStartup();
+                (sender as MenuItem).Checked = false;
+            } else
+            {
+                AddApplicationToStartup();
+                (sender as MenuItem).Checked = true;
+            }
+        }
+
+        public static bool IsApplicationInStatup()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true))
+            {
+                object value = key.GetValue(appName);
+                return (value != null);
+            }
+        }
+
+        public static void AddApplicationToStartup()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true))
+            {
+                key.SetValue(appName, "\"" + Application.ExecutablePath + "\"");
+            }
+        }
+
+        public static void RemoveApplicationFromStartup()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true))
+            {
+                key.DeleteValue(appName, false);
+            }
         }
 
         void Exit(object sender, EventArgs e)
