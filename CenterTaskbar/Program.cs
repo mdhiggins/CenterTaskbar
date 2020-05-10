@@ -51,7 +51,6 @@ namespace CenterTaskbar
         private static readonly String ExecutablePath = "\"" + Application.ExecutablePath + "\"";
 
         private static bool disposed = false;
-        volatile bool loopCancelled = false;
 
         private readonly NotifyIcon trayIcon;
         private static readonly AutomationElement desktop = AutomationElement.RootElement;
@@ -62,7 +61,8 @@ namespace CenterTaskbar
         private readonly List<AutomationElement> bars = new List<AutomationElement>();
 
         private readonly int activeFramerate = DisplaySettings.CurrentRefreshRate();
-        private Thread positionThread;
+        // private Thread positionThread;
+        private Dictionary<AutomationElement, Thread> positionThreads = new Dictionary<AutomationElement, Thread>();
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, int uFlags);
@@ -161,25 +161,21 @@ namespace CenterTaskbar
 
         private void CancelPositionThread()
         {
-            if (positionThread != null)
+            foreach (Thread thread in positionThreads.Values)
             {
-                //positionThread.Abort();
-                loopCancelled = true;
-                positionThread.Join();
+                thread.Abort();
             }
         }
 
         void Restart(object sender, EventArgs e)
         {
             CancelPositionThread();
-
             Start();
         }
 
         private void ResetAll()
         {
             CancelPositionThread();
-
             foreach (AutomationElement trayWnd in bars)
             {
                 Reset(trayWnd);
@@ -204,17 +200,8 @@ namespace CenterTaskbar
                 return;
             }
 
-            // Removed these lines because they currently do nothing.
-            //Rect trayBounds = trayWnd.Cached.BoundingRectangle;
-            //bool horizontal = (trayBounds.Width > trayBounds.Height);
-
             IntPtr tasklistPtr = (IntPtr)tasklist.Current.NativeWindowHandle;
-
-            //double listBounds = horizontal ? tasklist.Current.BoundingRectangle.X : tasklist.Current.BoundingRectangle.Y;
-
-            //Rect bounds = tasklist.Current.BoundingRectangle;
-            //int newWidth = (int)bounds.Width;
-            //int newHeight = (int)bounds.Height;
+            
             SetWindowPos(tasklistPtr, IntPtr.Zero, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_ASYNCWINDOWPOS);
         }
 
@@ -254,48 +241,49 @@ namespace CenterTaskbar
 
                     bars.Add(trayWnd);
                     children.Add(trayWnd, tasklist);
+                    positionThreads[trayWnd] = new Thread(new ParameterizedThreadStart(LoopForPosition));
+                    positionThreads[trayWnd].Start(trayWnd);
                 }
             }
 
             UIAeventHandler = new AutomationEventHandler(OnUIAutomationEvent);
             Automation.AddAutomationEventHandler(WindowPattern.WindowOpenedEvent, desktop, TreeScope.Subtree, UIAeventHandler);
             Automation.AddAutomationEventHandler(WindowPattern.WindowClosedEvent, desktop, TreeScope.Subtree, UIAeventHandler);
-
-            positionThread = new Thread(new ThreadStart(LoopForPosition));
-            positionThread.Start();
         }
 
         private void OnUIAutomationEvent(object src, AutomationEventArgs e)
         {
             Debug.Print("Event occured: {0}", e.EventId.ProgrammaticName);
-            if (!positionThread.IsAlive)
+            foreach (AutomationElement trayWnd in bars)
             {
-                positionThread = new Thread(new ThreadStart(LoopForPosition));
-                positionThread.Start();
+                if (!positionThreads[trayWnd].IsAlive)
+                {
+                    Debug.WriteLine("Starting new thead");
+                    positionThreads[trayWnd] = new Thread(new ParameterizedThreadStart(LoopForPosition));
+                    positionThreads[trayWnd].Start(trayWnd);
+                } else
+                {
+                    Debug.WriteLine("Thread already exists");
+                }
             }
+
         }
 
-        private void LoopForPosition()
+        private void LoopForPosition(object trayWndObj)
         {
-            int numberOfLoops = activeFramerate / 10; //  Why 5?
+            AutomationElement trayWnd = (AutomationElement)trayWndObj;
+            int numberOfLoops = activeFramerate / 10;
             int keepGoing = 0;
-            while (keepGoing < numberOfLoops) 
+            while (keepGoing < numberOfLoops)
             {
-                foreach (AutomationElement trayWnd in bars)
+                if (!PositionLoop(trayWnd))
                 {
-                    if (!PositionLoop(trayWnd))
-                    {
-                        keepGoing += 1;                        
-                    }
-
-                    System.Threading.Tasks.Task.Delay(1000 / activeFramerate).Wait();
+                    keepGoing += 1;
                 }
-
-                if (loopCancelled) break;                
+                System.Threading.Tasks.Task.Delay(1000 / activeFramerate).Wait();             
             }
 
             Debug.WriteLine("LoopForPosition Thread ended.");
-            loopCancelled = false;
         }
 
         private bool PositionLoop(AutomationElement trayWnd)
