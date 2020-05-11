@@ -55,7 +55,7 @@ namespace CenterTaskbar
 
         private static readonly string ExecutablePath = "\"" + Application.ExecutablePath + "\"";
         private static bool _disposed;
-        volatile bool _loopCancelled;
+        private CancellationTokenSource _loopCancellationTokenSource = new CancellationTokenSource();
 
         private static readonly AutomationElement Desktop = AutomationElement.RootElement;
         private static AutomationEventHandler _uiaEventHandler;
@@ -72,8 +72,8 @@ namespace CenterTaskbar
         private readonly NotifyIcon _trayIcon;
 
         // private Thread positionThread;
-        private readonly Dictionary<AutomationElement, Thread> _positionThreads =
-            new Dictionary<AutomationElement, Thread>();
+        private readonly Dictionary<AutomationElement, Task> _positionThreads =
+            new Dictionary<AutomationElement, Task>();
 
         public TrayApplication(IReadOnlyList<string> args)
         {
@@ -164,18 +164,17 @@ namespace CenterTaskbar
 
         private void CancelPositionThread()
         {
-            _loopCancelled = true;
-            foreach (var thread in _positionThreads.Values)
+            _loopCancellationTokenSource.Cancel();
+            Parallel.ForEach(_positionThreads.Values.ToList(), theTask =>
             {
                 // Give the thread time to exit gracefully.
-                if (!thread.Join(OneSecond * 3))
-                {
-                    // Only abort if we reach timeout waiting for the thread to end.
-                    thread.Abort();
-                }
-            }
+                if (theTask.Wait(OneSecond * 3)) return;
 
-            _loopCancelled = false;
+                Debug.WriteLine("Timeout waiting for task to cancel!");
+                theTask.Dispose();
+            });
+
+            _loopCancellationTokenSource = new CancellationTokenSource();
         }
 
         private void Restart(object sender, EventArgs e)
@@ -187,7 +186,7 @@ namespace CenterTaskbar
         private void ResetAll()
         {
             CancelPositionThread();
-            foreach (var trayWnd in _bars) Reset(trayWnd);
+            Parallel.ForEach(_bars.ToList(), Reset);
         }
 
         private static void Reset(AutomationElement trayWnd)
@@ -237,23 +236,26 @@ namespace CenterTaskbar
 
                 Debug.WriteLine(lists.Count + " bar(s) detected");
                 _lasts.Clear();
-                foreach (AutomationElement trayWnd in lists)
+                Parallel.ForEach(lists.OfType<AutomationElement>(), trayWnd =>
                 {
-                    var taskList = trayWnd.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
+                    var taskList = trayWnd.FindFirst(TreeScope.Descendants,
+                        new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
                     if (taskList == null)
                     {
                         Debug.WriteLine("Null values found, aborting");
-                        continue;
                     }
+                    else
+                    {
+                        _propChangeHandler = OnUIAutomationEvent;
+                        Automation.AddAutomationPropertyChangedEventHandler(taskList, TreeScope.Element, _propChangeHandler,
+                            AutomationElement.BoundingRectangleProperty);
 
-                    _propChangeHandler = OnUIAutomationEvent;
-                    Automation.AddAutomationPropertyChangedEventHandler(taskList, TreeScope.Element, _propChangeHandler, AutomationElement.BoundingRectangleProperty);
+                        _bars.Add(trayWnd);
+                        _children.Add(trayWnd, taskList);
 
-                    _bars.Add(trayWnd);
-                    _children.Add(trayWnd, taskList);
-                    _positionThreads[trayWnd] = new Thread(LoopForPosition);
-                    _positionThreads[trayWnd].Start(trayWnd);
-                }
+                        _positionThreads[trayWnd] = Task.Run(() => LoopForPosition(trayWnd), _loopCancellationTokenSource.Token);
+                    }
+                });
             }
 
             _uiaEventHandler = OnUIAutomationEvent;
@@ -264,17 +266,18 @@ namespace CenterTaskbar
         private void OnUIAutomationEvent(object src, AutomationEventArgs e)
         {
             Debug.Print("Event occured: {0}", e.EventId.ProgrammaticName);
-            foreach (var trayWnd in _bars.ToList())
-                if (!_positionThreads[trayWnd].IsAlive)
+            Parallel.ForEach(_bars.ToList(), trayWnd => 
+            {
+                if (_positionThreads[trayWnd].IsCompleted)
                 {
                     Debug.WriteLine("Starting new thead");
-                    _positionThreads[trayWnd] = new Thread(LoopForPosition);
-                    _positionThreads[trayWnd].Start(trayWnd);
+                    _positionThreads[trayWnd] = Task.Run(() => LoopForPosition(trayWnd), _loopCancellationTokenSource.Token);
                 }
                 else
                 {
                     Debug.WriteLine("Thread already exists");
                 }
+            });
         }
 
         private void LoopForPosition(object trayWndObj)
@@ -285,7 +288,7 @@ namespace CenterTaskbar
             while (keepGoing < numberOfLoops)
             {
                 if (!PositionLoop(trayWnd)) keepGoing += 1;
-                if (_loopCancelled) break;
+                if (_loopCancellationTokenSource.IsCancellationRequested) break;
                 Task.Delay(OneSecond / _activeFramerate).Wait();
             }
 
@@ -457,9 +460,9 @@ namespace CenterTaskbar
             }
 
             if (horizontal)
-                Debug.WriteLine((left ? "Left" : "Right") + " side boundary calulcated at " + adjustment);
+                Debug.WriteLine((left ? "Left" : "Right") + " side boundary calculated at " + adjustment);
             else
-                Debug.WriteLine((left ? "Top" : "Bottom") + " side boundary calulcated at " + adjustment);
+                Debug.WriteLine((left ? "Top" : "Bottom") + " side boundary calculated at " + adjustment);
 
             return (int) adjustment;
         }
