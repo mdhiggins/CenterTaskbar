@@ -11,13 +11,12 @@ namespace CenterTaskbar
         const int ENUM_CURRENT_SETTINGS = -1;
         const int ENUM_REGISTRY_SETTINGS = -2;
 
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
         private struct DEVMODE
         {
-
-            private const int CCHDEVICENAME = 0x20;
-            private const int CCHFORMNAME = 0x20;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 0x20)]
+            private const int CCHDEVICENAME = 32;
+            private const int CCHFORMNAME = 32;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CCHDEVICENAME)]
             public string dmDeviceName;
             public short dmSpecVersion;
             public short dmDriverVersion;
@@ -33,7 +32,7 @@ namespace CenterTaskbar
             public short dmYResolution;
             public short dmTTOption;
             public short dmCollate;
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 0x20)]
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CCHFORMNAME)]
             public string dmFormName;
             public short dmLogPixels;
             public int dmBitsPerPel;
@@ -49,7 +48,6 @@ namespace CenterTaskbar
             public int dmReserved2;
             public int dmPanningWidth;
             public int dmPanningHeight;
-
         }
 
         //public static void ListAllDisplayModes()
