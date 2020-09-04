@@ -439,13 +439,13 @@ namespace CenterTaskbar
             var prevSibling = TreeWalker.ControlViewWalker.GetPreviousSibling(element);
             var nextSibling = TreeWalker.ControlViewWalker.GetNextSibling(element);
             var parent = TreeWalker.ControlViewWalker.GetParent(element);
-            if (left && prevSibling != null)
+            if (left && prevSibling != null && !prevSibling.Current.BoundingRectangle.IsEmpty)
             {
                 adjustment = horizontal
                     ? prevSibling.Current.BoundingRectangle.Right
                     : prevSibling.Current.BoundingRectangle.Bottom;
             }
-            else if (!left && nextSibling != null)
+            else if (!left && nextSibling != null && !nextSibling.Current.BoundingRectangle.IsEmpty)
             {
                 adjustment = horizontal
                     ? nextSibling.Current.BoundingRectangle.Left
