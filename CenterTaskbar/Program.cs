@@ -157,8 +157,9 @@ namespace CenterTaskbar
             }
         }
 
-        private static void Exit(object sender, EventArgs e)
+        private void Exit(object sender, EventArgs e)
         {
+            SystemEvents.DisplaySettingsChanging -= SystemEvents_DisplaySettingsChanged;
             Application.ExitThread();
         }
 
@@ -261,6 +262,13 @@ namespace CenterTaskbar
             _uiaEventHandler = OnUIAutomationEvent;
             Automation.AddAutomationEventHandler(WindowPattern.WindowOpenedEvent, Desktop, TreeScope.Subtree, _uiaEventHandler);
             Automation.AddAutomationEventHandler(WindowPattern.WindowClosedEvent, Desktop, TreeScope.Subtree, _uiaEventHandler);
+
+            SystemEvents.DisplaySettingsChanging += SystemEvents_DisplaySettingsChanged;
+        }
+
+        private void SystemEvents_DisplaySettingsChanged(object sender, EventArgs e)
+        {
+            Restart(sender, e);
         }
 
         private void OnUIAutomationEvent(object src, AutomationEventArgs e)
