@@ -168,11 +168,19 @@ namespace CenterTaskbar
             _loopCancellationTokenSource.Cancel();
             Parallel.ForEach(_positionThreads.Values.ToList(), theTask =>
             {
-                // Give the thread time to exit gracefully.
-                if (theTask.Wait(OneSecond * 3)) return;
-
-                Debug.WriteLine("Timeout waiting for task to cancel!");
-                theTask.Dispose();
+                try
+                {
+                    // Give the thread time to exit gracefully.
+                    if (theTask.Wait(OneSecond * 3)) return;
+                }
+                catch (OperationCanceledException e)
+                {
+                    Console.WriteLine($"{nameof(OperationCanceledException)} thrown with message: {e.Message}");
+                }
+                finally
+                {
+                    theTask.Dispose();
+                }
             });
 
             _loopCancellationTokenSource = new CancellationTokenSource();
