@@ -166,25 +166,34 @@ namespace CenterTaskbar
 
         private void CancelPositionThread()
         {
-            _loopCancellationTokenSource.Cancel();
-            Parallel.ForEach(_positionThreads.Values.ToList(), theTask =>
+            try
             {
-                try
+                _loopCancellationTokenSource.Cancel();
+                Parallel.ForEach(_positionThreads.Values.ToList(), theTask =>
                 {
-                    // Give the thread time to exit gracefully.
-                    if (theTask.Wait(OneSecond * 3)) return;
-                }
-                catch (OperationCanceledException e)
-                {
-                    Console.WriteLine($"{nameof(OperationCanceledException)} thrown with message: {e.Message}");
-                }
-                finally
-                {
-                    theTask.Dispose();
-                }
-            });
-
-            _loopCancellationTokenSource = new CancellationTokenSource();
+                    try
+                    {
+                        // Give the thread time to exit gracefully.
+                        if (theTask.Wait(OneSecond * 3)) return;
+                    }
+                    catch (OperationCanceledException e)
+                    {
+                        Console.WriteLine($"{nameof(OperationCanceledException)} thrown with message: {e.Message}");
+                    }
+                    finally
+                    {
+                        theTask.Dispose();
+                    }
+                });
+            }
+            catch (OperationCanceledException e)
+            {
+                Console.WriteLine($"{nameof(OperationCanceledException)} thrown with message: {e.Message}");
+            }
+            finally
+            {
+                _loopCancellationTokenSource = new CancellationTokenSource();
+            }
         }
 
         private void Restart(object sender, EventArgs e)
