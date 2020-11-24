@@ -106,6 +106,8 @@ namespace CenterTaskbar
             };
 
             Start();
+
+            SystemEvents.DisplaySettingsChanging += SystemEvents_DisplaySettingsChanged;
         }
 
         public void ToggleStartup(object sender, EventArgs e)
@@ -154,8 +156,9 @@ namespace CenterTaskbar
             }
         }
 
-        void Exit(object sender, EventArgs e)
+        private void Exit(object sender, EventArgs e)
         {
+            SystemEvents.DisplaySettingsChanging -= SystemEvents_DisplaySettingsChanged;
             Application.ExitThread();
         }
 
@@ -249,6 +252,11 @@ namespace CenterTaskbar
             UIAeventHandler = new AutomationEventHandler(OnUIAutomationEvent);
             Automation.AddAutomationEventHandler(WindowPattern.WindowOpenedEvent, desktop, TreeScope.Subtree, UIAeventHandler);
             Automation.AddAutomationEventHandler(WindowPattern.WindowClosedEvent, desktop, TreeScope.Subtree, UIAeventHandler);
+        }
+
+        private void SystemEvents_DisplaySettingsChanged(object sender, EventArgs e)
+        {
+            Restart(sender, e);
         }
 
         private void OnUIAutomationEvent(object src, AutomationEventArgs e)
@@ -423,10 +431,10 @@ namespace CenterTaskbar
             AutomationElement prevSibling = TreeWalker.ControlViewWalker.GetPreviousSibling(element);
             AutomationElement nextSibling = TreeWalker.ControlViewWalker.GetNextSibling(element);
             AutomationElement parent = TreeWalker.ControlViewWalker.GetParent(element);
-            if ((left && prevSibling != null))
+            if ((left && prevSibling != null && !prevSibling.Current.BoundingRectangle.IsEmpty))
             {
                 adjustment = horizontal ? prevSibling.Current.BoundingRectangle.Right : prevSibling.Current.BoundingRectangle.Bottom;
-            } else if (!left && nextSibling != null)
+            } else if (!left && nextSibling != null && !nextSibling.Current.BoundingRectangle.IsEmpty)
             {
                 adjustment = horizontal ? nextSibling.Current.BoundingRectangle.Left : nextSibling.Current.BoundingRectangle.Top;
             }
