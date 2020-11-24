@@ -113,6 +113,7 @@ namespace CenterTaskbar
             };
 
             Start();
+            SystemEvents.DisplaySettingsChanging += SystemEvents_DisplaySettingsChanged;
         }
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -270,8 +271,6 @@ namespace CenterTaskbar
             _uiaEventHandler = OnUIAutomationEvent;
             Automation.AddAutomationEventHandler(WindowPattern.WindowOpenedEvent, Desktop, TreeScope.Subtree, _uiaEventHandler);
             Automation.AddAutomationEventHandler(WindowPattern.WindowClosedEvent, Desktop, TreeScope.Subtree, _uiaEventHandler);
-
-            SystemEvents.DisplaySettingsChanging += SystemEvents_DisplaySettingsChanged;
         }
 
         private void SystemEvents_DisplaySettingsChanged(object sender, EventArgs e)
