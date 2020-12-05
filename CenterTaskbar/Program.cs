@@ -355,8 +355,8 @@ namespace CenterTaskbar
             }
 
             var scale = horizontal
-                ? last.Current.BoundingRectangle.Height / trayBounds.Height
-                : last.Current.BoundingRectangle.Width / trayBounds.Width;
+                ? first.Current.BoundingRectangle.Top / trayBounds.Top
+                : first.Current.BoundingRectangle.Left / trayBounds.Left;
             Debug.WriteLine("UI Scale: " + scale);
             var size = (lastChildPos - (horizontal 
                             ? first.Current.BoundingRectangle.Left 
