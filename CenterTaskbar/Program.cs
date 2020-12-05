@@ -354,9 +354,13 @@ namespace CenterTaskbar
                 return true;
             }
 
+            var iconSizeSetting = (int)Registry.GetValue(@"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarSmallIcons", 0);
+            var iconSizeHorizontal = (iconSizeSetting == 0) ? 40 : 30;
+            var iconSizeVertical = (iconSizeSetting == 0) ? 47 : 31;
+
             var scale = horizontal
-                ? first.Current.BoundingRectangle.Top / trayBounds.Top
-                : first.Current.BoundingRectangle.Left / trayBounds.Left;
+                ? first.Current.BoundingRectangle.Height / iconSizeHorizontal
+                : first.Current.BoundingRectangle.Height / iconSizeVertical;
             Debug.WriteLine("UI Scale: " + scale);
             var size = (lastChildPos - (horizontal 
                             ? first.Current.BoundingRectangle.Left 
