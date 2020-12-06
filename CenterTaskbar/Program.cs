@@ -401,7 +401,7 @@ namespace CenterTaskbar
             }
 
             // Right bounds check
-            var rightBounds = SideBoundary(false, horizontal, taskList);
+            var rightBounds = SideBoundary(false, horizontal, taskList, scale, trayBounds);
             if (targetPos + size > rightBounds)
             {
                 // Shift off center when the bar is too big
@@ -411,7 +411,7 @@ namespace CenterTaskbar
             }
 
             // Left bounds check
-            var leftBounds = SideBoundary(true, horizontal, taskList);
+            var leftBounds = SideBoundary(true, horizontal, taskList, scale, trayBounds);
             if (targetPos <= leftBounds)
             {
                 // Prevent X position ending up beyond the normal left aligned position
@@ -424,21 +424,21 @@ namespace CenterTaskbar
 
             if (horizontal)
             {
-                SetWindowPos(taskListPtr, IntPtr.Zero, RelativePos(targetPos, horizontal, taskList), 0, 0, 0,
+                SetWindowPos(taskListPtr, IntPtr.Zero, RelativePos(targetPos, horizontal, taskList, scale, trayBounds), 0, 0, 0,
                     SWP_NOZORDER | SWP_NOSIZE | SWP_ASYNCWINDOWPOS);
                 Debug.Write("Final X Position: ");
-                Debug.WriteLine(taskList.Current.BoundingRectangle.X);
-                Debug.Write(taskList.Current.BoundingRectangle.X == targetPos ? "Move hit target" : "Move missed target");
-                Debug.WriteLine(" (diff: " + Math.Abs(taskList.Current.BoundingRectangle.X - targetPos) + ")");
+                Debug.WriteLine(((first.Current.BoundingRectangle.Left - trayBounds.Left) / scale) + trayBounds.Left);
+                Debug.Write(Math.Round(((first.Current.BoundingRectangle.Left - trayBounds.Left) / scale) + trayBounds.Left) == Math.Round(targetPos) ? "Move hit target" : "Move missed target");
+                Debug.WriteLine(" (diff: " + Math.Abs((((first.Current.BoundingRectangle.Left - trayBounds.Left) / scale) + trayBounds.Left) - targetPos) + ")");
             }
             else
             {
-                SetWindowPos(taskListPtr, IntPtr.Zero, 0, RelativePos(targetPos, horizontal, taskList), 0, 0,
+                SetWindowPos(taskListPtr, IntPtr.Zero, 0, RelativePos(targetPos, horizontal, taskList, scale, trayBounds), 0, 0,
                     SWP_NOZORDER | SWP_NOSIZE | SWP_ASYNCWINDOWPOS);
                 Debug.Write("Final Y Position: ");
-                Debug.WriteLine(taskList.Current.BoundingRectangle.Y);
-                Debug.Write(taskList.Current.BoundingRectangle.Y == targetPos ? "Move hit target" : "Move missed target");
-                Debug.WriteLine(" (diff: " + Math.Abs(taskList.Current.BoundingRectangle.Y - targetPos) + ")");
+                Debug.WriteLine(((first.Current.BoundingRectangle.Top - trayBounds.Top) / scale) + trayBounds.Top);
+                Debug.Write(Math.Round(((first.Current.BoundingRectangle.Top - trayBounds.Top) / scale) + trayBounds.Top) == Math.Round(targetPos) ? "Move hit target" : "Move missed target");
+                Debug.WriteLine(" (diff: " + Math.Abs((((first.Current.BoundingRectangle.Top - trayBounds.Top) / scale) + trayBounds.Top) - targetPos) + ")");
             }
 
             _lasts[trayWnd] = horizontal ? last.Current.BoundingRectangle.Left : last.Current.BoundingRectangle.Top;
@@ -446,9 +446,9 @@ namespace CenterTaskbar
             return true;
         }
 
-        private static int RelativePos(double x, bool horizontal, AutomationElement element)
+        private static int RelativePos(double x, bool horizontal, AutomationElement element, double scale, System.Windows.Rect trayBounds)
         {
-            var adjustment = SideBoundary(true, horizontal, element);
+            var adjustment = SideBoundary(true, horizontal, element, scale, trayBounds);
 
             var newPos = x - adjustment;
 
@@ -461,30 +461,46 @@ namespace CenterTaskbar
             return (int) newPos;
         }
 
-        private static int SideBoundary(bool left, bool horizontal, AutomationElement element)
+        private static int SideBoundary(bool left, bool horizontal, AutomationElement element, double scale, System.Windows.Rect trayBounds)
         {
             double adjustment = 0;
-            var prevSibling = TreeWalker.ControlViewWalker.GetPreviousSibling(element);
-            var nextSibling = TreeWalker.ControlViewWalker.GetNextSibling(element);
-            var parent = TreeWalker.ControlViewWalker.GetParent(element);
+            Debug.WriteLine("Boundary calc for " + element.Current.ClassName);
+            var prevSibling = TreeWalker.RawViewWalker.GetPreviousSibling(element);
+            var nextSibling = TreeWalker.RawViewWalker.GetNextSibling(element);
+            var first = TreeWalker.RawViewWalker.GetFirstChild(element);
+            var parent = TreeWalker.RawViewWalker.GetParent(element);
+
+            var padding = horizontal? (trayBounds.Left - element.Current.BoundingRectangle.Left) - ((trayBounds.Left - first.Current.BoundingRectangle.Left) / scale): (trayBounds.Top - element.Current.BoundingRectangle.Top) - ((trayBounds.Top - first.Current.BoundingRectangle.Top) / scale);
+
+            Debug.Write(horizontal ? "Horizontal Padding: ": "Vertical Padding: ");
+            Debug.WriteLine(Math.Round(padding));
+            if (padding < 0)
+            {
+                Debug.WriteLine("Padding should not be less than 0, setting to 0");
+                padding = 0;
+            }
+
             if (left && prevSibling != null && !prevSibling.Current.BoundingRectangle.IsEmpty)
             {
+                Debug.WriteLine("Left sibling calc " + prevSibling.Current.ClassName);
                 adjustment = horizontal
                     ? prevSibling.Current.BoundingRectangle.Right
                     : prevSibling.Current.BoundingRectangle.Bottom;
             }
             else if (!left && nextSibling != null && !nextSibling.Current.BoundingRectangle.IsEmpty)
             {
+                Debug.WriteLine("Right sibling calc " + nextSibling.Current.ClassName);
                 adjustment = horizontal
                     ? nextSibling.Current.BoundingRectangle.Left
                     : nextSibling.Current.BoundingRectangle.Top;
             }
             else if (parent != null)
             {
+                Debug.WriteLine("Parent calc " + parent.Current.ClassName);
                 if (horizontal)
-                    adjustment = left ? parent.Current.BoundingRectangle.Left : parent.Current.BoundingRectangle.Right;
+                    adjustment = left ? parent.Current.BoundingRectangle.Left + padding : parent.Current.BoundingRectangle.Right;
                 else
-                    adjustment = left ? parent.Current.BoundingRectangle.Top : parent.Current.BoundingRectangle.Bottom;
+                    adjustment = left ? parent.Current.BoundingRectangle.Top + padding : parent.Current.BoundingRectangle.Bottom;
             }
 
             if (horizontal)
