@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Threading.Tasks;
 
 namespace CenterTaskbar
 {
@@ -254,8 +255,9 @@ namespace CenterTaskbar
             Automation.AddAutomationEventHandler(WindowPattern.WindowClosedEvent, desktop, TreeScope.Subtree, UIAeventHandler);
         }
 
-        private void SystemEvents_DisplaySettingsChanged(object sender, EventArgs e)
+        private async void SystemEvents_DisplaySettingsChanged(object sender, EventArgs e)
         {
+            await Task.Delay(3000);
             Restart(sender, e);
         }
 
