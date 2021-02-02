@@ -401,7 +401,6 @@ namespace CenterTaskbar
                 return false;
             }
 
-            // Right bounds check
             int rightBounds;
             int leftBounds;
             try
@@ -414,7 +413,8 @@ namespace CenterTaskbar
                 Reset(trayWnd);
                 return true;
             }
-            
+
+            // Right bounds check
             if (targetPos + size > rightBounds)
             {
                 // Shift off center when the bar is too big
