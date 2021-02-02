@@ -282,8 +282,9 @@ namespace CenterTaskbar
             Automation.AddAutomationEventHandler(WindowPattern.WindowClosedEvent, Desktop, TreeScope.Subtree, _uiaEventHandler);
         }
 
-        private void SystemEvents_DisplaySettingsChanged(object sender, EventArgs e)
+        private async void SystemEvents_DisplaySettingsChanged(object sender, EventArgs e)
         {
+            await Task.Delay(3000);
             Restart(sender, e);
         }
 
@@ -401,7 +402,19 @@ namespace CenterTaskbar
             }
 
             // Right bounds check
-            var rightBounds = SideBoundary(false, horizontal, taskList, scale, trayBounds);
+            int rightBounds;
+            int leftBounds;
+            try
+            {
+                rightBounds = SideBoundary(false, horizontal, taskList, scale, trayBounds);
+                leftBounds = SideBoundary(true, horizontal, taskList, scale, trayBounds);
+            }
+            catch (NullReferenceException)
+            {
+                Reset(trayWnd);
+                return true;
+            }
+            
             if (targetPos + size > rightBounds)
             {
                 // Shift off center when the bar is too big
@@ -411,7 +424,6 @@ namespace CenterTaskbar
             }
 
             // Left bounds check
-            var leftBounds = SideBoundary(true, horizontal, taskList, scale, trayBounds);
             if (targetPos <= leftBounds)
             {
                 // Prevent X position ending up beyond the normal left aligned position
