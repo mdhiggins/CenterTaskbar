@@ -196,10 +196,18 @@ namespace CenterTaskbar
             }
         }
 
-        private void Restart(object sender, EventArgs e)
+        private async void Restart(object sender, EventArgs e)
         {
             CancelPositionThread();
-            Start();
+            try {
+                Start();
+            }
+            catch (NullReferenceException)
+            {
+                await Task.Delay(100);
+                Start();
+            }
+            
         }
 
         private void ResetAll()
