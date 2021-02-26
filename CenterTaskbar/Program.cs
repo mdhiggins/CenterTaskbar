@@ -107,7 +107,8 @@ namespace CenterTaskbar
                     header,
                     new MenuItem("Scan for screens", Restart),
                     startup,
-                    new MenuItem("E&xit", Exit)
+                    new MenuItem("Hide", Hide),
+                    new MenuItem("E&xit", Exit),
                 }),
                 Visible = true
             };
@@ -208,6 +209,11 @@ namespace CenterTaskbar
                 Start();
             }
             
+        }
+
+        private void Hide(object sender, EventArgs eventArgs)
+        {
+            _trayIcon.Visible = false;
         }
 
         private void ResetAll()
