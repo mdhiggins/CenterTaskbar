@@ -43,6 +43,7 @@ namespace CenterTaskbar
     {
         private const string AppName = "CenterTaskbar";
         private const string RunRegkey = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+        private const string HideRegkey = "SOFTWARE\\CenterTaskbar";
         private const int OneSecond = 1000;
         private const int SWP_NOSIZE = 0x0001;
         private const int SWP_NOZORDER = 0x0004;
@@ -80,8 +81,15 @@ namespace CenterTaskbar
             if (args.Count > 0)
                 try
                 {
-                    _activeFramerate = int.Parse(args[0]);
-                    Debug.WriteLine("Active refresh rate: " + _activeFramerate);
+                    if (args[0].Equals("-visible"))
+                    {
+                        RemoveHideFromRegistry();
+                    }
+                    else
+                    {
+                        _activeFramerate = int.Parse(args[0]);
+                        Debug.WriteLine("Active refresh rate: " + _activeFramerate);
+                    }
                 }
                 catch (FormatException e)
                 {
@@ -99,19 +107,22 @@ namespace CenterTaskbar
             };
 
             // Setup Tray Icon
-            _trayIcon = new NotifyIcon
+            if (!IsHideInRegistry())
             {
-                Icon = Resources.TrayIcon,
-                ContextMenu = new ContextMenu(new[]
+                _trayIcon = new NotifyIcon
                 {
-                    header,
-                    new MenuItem("Scan for screens", Restart),
-                    startup,
-                    new MenuItem("Hide", Hide),
-                    new MenuItem("E&xit", Exit),
-                }),
-                Visible = true
-            };
+                    Icon = Resources.TrayIcon,
+                    ContextMenu = new ContextMenu(new[]
+                    {
+                        header,
+                        new MenuItem("Scan for screens", Restart),
+                        startup,
+                        new MenuItem("Hide", Hide),
+                        new MenuItem("E&xit", Exit),
+                    }),
+                    Visible = true
+                };
+            }
 
             Start();
             SystemEvents.DisplaySettingsChanging += SystemEvents_DisplaySettingsChanged;
@@ -143,6 +154,15 @@ namespace CenterTaskbar
             }
         }
 
+        public bool IsHideInRegistry()
+        {
+            using (var key = Registry.CurrentUser.OpenSubKey(HideRegkey, true))
+            {
+                var value = key?.GetValue("Hide");
+                return value is string startValue && startValue.StartsWith("True");
+            }
+        }
+
         public void AddApplicationToStartup()
         {
             using (var key = Registry.CurrentUser.OpenSubKey(RunRegkey, true))
@@ -151,11 +171,27 @@ namespace CenterTaskbar
             }
         }
 
+        public void AddHideToRegistry()
+        {
+            using (var key = Registry.CurrentUser.CreateSubKey(HideRegkey, true))
+            {
+                key?.SetValue("Hide", "True");
+            }
+        }
+
         public void RemoveApplicationFromStartup()
         {
             using (var key = Registry.CurrentUser.OpenSubKey(RunRegkey, true))
             {
                 key?.DeleteValue(AppName, false);
+            }
+        }
+        
+        public void RemoveHideFromRegistry()
+        {
+            using (var key = Registry.CurrentUser.OpenSubKey(HideRegkey, true))
+            {
+                key?.SetValue("Hide", "False");
             }
         }
 
@@ -213,6 +249,7 @@ namespace CenterTaskbar
 
         private void Hide(object sender, EventArgs eventArgs)
         {
+            AddHideToRegistry();
             _trayIcon.Visible = false;
         }
 
