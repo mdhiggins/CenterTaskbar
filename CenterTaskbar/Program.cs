@@ -54,6 +54,7 @@ namespace CenterTaskbar
         private const string ShellSecondaryTrayWnd = "Shell_SecondaryTrayWnd";
 
         private static readonly string ExecutablePath = "\"" + Application.ExecutablePath + "\"";
+        private static readonly string SilentExecutablePath = "\"" + Application.ExecutablePath + "\"" + " -silent";
         private static bool _disposed;
         private CancellationTokenSource _loopCancellationTokenSource = new CancellationTokenSource();
 
@@ -71,6 +72,8 @@ namespace CenterTaskbar
 
         private readonly NotifyIcon _trayIcon;
 
+        private readonly bool _hidden = false;
+
         // private Thread positionThread;
         private readonly Dictionary<AutomationElement, Task> _positionThreads =
             new Dictionary<AutomationElement, Task>();
@@ -80,8 +83,15 @@ namespace CenterTaskbar
             if (args.Count > 0)
                 try
                 {
-                    _activeFramerate = int.Parse(args[0]);
-                    Debug.WriteLine("Active refresh rate: " + _activeFramerate);
+                    if (args[0].Equals("-silent"))
+                    {
+                        _hidden = true;
+                    }
+                    else
+                    {
+                        _activeFramerate = int.Parse(args[0]);
+                        Debug.WriteLine("Active refresh rate: " + _activeFramerate);
+                    }
                 }
                 catch (FormatException e)
                 {
@@ -99,18 +109,26 @@ namespace CenterTaskbar
             };
 
             // Setup Tray Icon
-            _trayIcon = new NotifyIcon
+            if (!_hidden)
             {
-                Icon = Resources.TrayIcon,
-                ContextMenu = new ContextMenu(new[]
+                if (IsSilentApplicationInStartup())
                 {
-                    header,
-                    new MenuItem("Scan for screens", Restart),
-                    startup,
-                    new MenuItem("E&xit", Exit)
-                }),
-                Visible = true
-            };
+                    AddApplicationToStartup();
+                }
+                _trayIcon = new NotifyIcon
+                {
+                    Icon = Resources.TrayIcon,
+                    ContextMenu = new ContextMenu(new[]
+                    {
+                        header,
+                        new MenuItem("Scan for screens", Restart),
+                        startup,
+                        new MenuItem("Hide", Hide),
+                        new MenuItem("E&xit", Exit),
+                    }),
+                    Visible = true
+                };
+            }
 
             Start();
             SystemEvents.DisplaySettingsChanging += SystemEvents_DisplaySettingsChanged;
@@ -141,12 +159,29 @@ namespace CenterTaskbar
                 return value is string startValue && startValue.StartsWith(ExecutablePath);
             }
         }
+        
+        public bool IsSilentApplicationInStartup()
+        {
+            using (var key = Registry.CurrentUser.OpenSubKey(RunRegkey, true))
+            {
+                var value = key?.GetValue(AppName);
+                return value is string startValue && startValue.StartsWith(SilentExecutablePath);
+            }
+        }
 
         public void AddApplicationToStartup()
         {
             using (var key = Registry.CurrentUser.OpenSubKey(RunRegkey, true))
             {
                 key?.SetValue(AppName, ExecutablePath);
+            }
+        }
+        
+        public void AddSilentApplicationToStartup()
+        {
+            using (var key = Registry.CurrentUser.OpenSubKey(RunRegkey, true))
+            {
+                key?.SetValue(AppName, SilentExecutablePath);
             }
         }
 
@@ -208,6 +243,18 @@ namespace CenterTaskbar
                 Start();
             }
             
+        }
+
+        private void Hide(object sender, EventArgs eventArgs)
+        {
+            if (IsApplicationInStartup())
+            {
+                AddSilentApplicationToStartup();
+                MessageBox.Show("The tray icon is now hidden. To show the icon again, " +
+                                "kill CenterTaskbar using Task Manager and run CenterTaskbar once again.",
+                    "CenterTaskbar", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+            }
+            _trayIcon.Visible = false;
         }
 
         private void ResetAll()
