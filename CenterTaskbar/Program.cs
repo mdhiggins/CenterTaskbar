@@ -43,7 +43,6 @@ namespace CenterTaskbar
     {
         private const string AppName = "CenterTaskbar";
         private const string RunRegkey = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
-        private const string HideRegkey = "SOFTWARE\\CenterTaskbar";
         private const int OneSecond = 1000;
         private const int SWP_NOSIZE = 0x0001;
         private const int SWP_NOZORDER = 0x0004;
@@ -55,6 +54,7 @@ namespace CenterTaskbar
         private const string ShellSecondaryTrayWnd = "Shell_SecondaryTrayWnd";
 
         private static readonly string ExecutablePath = "\"" + Application.ExecutablePath + "\"";
+        private static readonly string SilentExecutablePath = "\"" + Application.ExecutablePath + "\"" + " -silent";
         private static bool _disposed;
         private CancellationTokenSource _loopCancellationTokenSource = new CancellationTokenSource();
 
@@ -72,6 +72,8 @@ namespace CenterTaskbar
 
         private readonly NotifyIcon _trayIcon;
 
+        private readonly bool _hidden = false;
+
         // private Thread positionThread;
         private readonly Dictionary<AutomationElement, Task> _positionThreads =
             new Dictionary<AutomationElement, Task>();
@@ -81,9 +83,9 @@ namespace CenterTaskbar
             if (args.Count > 0)
                 try
                 {
-                    if (args[0].Equals("-visible"))
+                    if (args[0].Equals("-silent"))
                     {
-                        RemoveHideFromRegistry();
+                        _hidden = true;
                     }
                     else
                     {
@@ -107,8 +109,12 @@ namespace CenterTaskbar
             };
 
             // Setup Tray Icon
-            if (!IsHideInRegistry())
+            if (!_hidden)
             {
+                if (IsHiddenApplicationInStartup())
+                {
+                    AddApplicationToStartup();
+                }
                 _trayIcon = new NotifyIcon
                 {
                     Icon = Resources.TrayIcon,
@@ -153,13 +159,13 @@ namespace CenterTaskbar
                 return value is string startValue && startValue.StartsWith(ExecutablePath);
             }
         }
-
-        public bool IsHideInRegistry()
+        
+        public bool IsHiddenApplicationInStartup()
         {
-            using (var key = Registry.CurrentUser.OpenSubKey(HideRegkey, true))
+            using (var key = Registry.CurrentUser.OpenSubKey(RunRegkey, true))
             {
-                var value = key?.GetValue("Hide");
-                return value is string startValue && startValue.StartsWith("True");
+                var value = key?.GetValue(AppName);
+                return value is string startValue && startValue.StartsWith(SilentExecutablePath);
             }
         }
 
@@ -170,12 +176,12 @@ namespace CenterTaskbar
                 key?.SetValue(AppName, ExecutablePath);
             }
         }
-
-        public void AddHideToRegistry()
+        
+        public void AddHiddenApplicationToStartup()
         {
-            using (var key = Registry.CurrentUser.CreateSubKey(HideRegkey, true))
+            using (var key = Registry.CurrentUser.OpenSubKey(RunRegkey, true))
             {
-                key?.SetValue("Hide", "True");
+                key?.SetValue(AppName, SilentExecutablePath);
             }
         }
 
@@ -184,14 +190,6 @@ namespace CenterTaskbar
             using (var key = Registry.CurrentUser.OpenSubKey(RunRegkey, true))
             {
                 key?.DeleteValue(AppName, false);
-            }
-        }
-        
-        public void RemoveHideFromRegistry()
-        {
-            using (var key = Registry.CurrentUser.OpenSubKey(HideRegkey, true))
-            {
-                key?.SetValue("Hide", "False");
             }
         }
 
@@ -249,7 +247,12 @@ namespace CenterTaskbar
 
         private void Hide(object sender, EventArgs eventArgs)
         {
-            AddHideToRegistry();
+            if (IsApplicationInStartup())
+            {
+                AddHiddenApplicationToStartup();
+                MessageBox.Show("The tray icon is now hidden. To show the icon again, run CenterTaskbar once again.",
+                    "CenterTaskbar", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+            }
             _trayIcon.Visible = false;
         }
 
