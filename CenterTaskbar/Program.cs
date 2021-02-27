@@ -111,7 +111,7 @@ namespace CenterTaskbar
             // Setup Tray Icon
             if (!_hidden)
             {
-                if (IsHiddenApplicationInStartup())
+                if (IsSilentApplicationInStartup())
                 {
                     AddApplicationToStartup();
                 }
@@ -160,7 +160,7 @@ namespace CenterTaskbar
             }
         }
         
-        public bool IsHiddenApplicationInStartup()
+        public bool IsSilentApplicationInStartup()
         {
             using (var key = Registry.CurrentUser.OpenSubKey(RunRegkey, true))
             {
@@ -177,7 +177,7 @@ namespace CenterTaskbar
             }
         }
         
-        public void AddHiddenApplicationToStartup()
+        public void AddSilentApplicationToStartup()
         {
             using (var key = Registry.CurrentUser.OpenSubKey(RunRegkey, true))
             {
@@ -249,8 +249,9 @@ namespace CenterTaskbar
         {
             if (IsApplicationInStartup())
             {
-                AddHiddenApplicationToStartup();
-                MessageBox.Show("The tray icon is now hidden. To show the icon again, run CenterTaskbar once again.",
+                AddSilentApplicationToStartup();
+                MessageBox.Show("The tray icon is now hidden. To show the icon again, " +
+                                "kill CenterTaskbar using Task Manager and run CenterTaskbar once again.",
                     "CenterTaskbar", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
             }
             _trayIcon.Visible = false;
