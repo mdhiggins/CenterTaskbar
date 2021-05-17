@@ -108,9 +108,9 @@ jobs:
     # - name: Remove the pfx
     #   run: Remove-Item -path $env:Wap_Project_Directory\$env:Signing_Certificate
 
-    # Upload the MSIX package: https://github.com/marketplace/actions/upload-artifact
+    # Upload
     - name: Upload build artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: MSIX Package
-        path: ${{ env.Wap_Project_Directory }}\bin\${{ matrix.configuration }}\net5.0-windows
+        name: CenterTaskbar
+        path: ${{ env.Wap_Project_Directory }}\bin\${{ matrix.configuration }}\net5.0-windows\CenterTaskbar.exe
