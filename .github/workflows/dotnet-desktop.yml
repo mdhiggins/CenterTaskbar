@@ -115,4 +115,4 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: CenterTaskbar.${{ matrix.configuration }}
-        path: ${{ env.Wap_Project_Directory }}\bin\${{ matrix.configuration }}\net5.0-windows\publish\CenterTaskbar.exe
+        path: ${{ env.Wap_Project_Directory }}\bin\${{ matrix.configuration }}\net5.0-windows\win10-x64\publish\CenterTaskbar.exe
