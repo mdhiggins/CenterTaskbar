@@ -50,7 +50,7 @@ jobs:
 
     strategy:
       matrix:
-        configuration: [Debug, Release]
+        configuration: [Release]
 
     runs-on: windows-latest  # For a list of available runner types, refer to
                              # https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idruns-on
@@ -97,7 +97,9 @@ jobs:
     # Create the app package by building and packaging the Windows Application Packaging project
     - name: Create the app package
     #   run: msbuild $env:Wap_Project_Path /p:Configuration=$env:Configuration /p:UapAppxPackageBuildMode=$env:Appx_Package_Build_Mode /p:AppxBundle=$env:Appx_Bundle /p:PackageCertificateKeyFile=GitHubActionsWorkflow.pfx /p:PackageCertificatePassword=${{ secrets.Pfx_Key }}
-      run: msbuild $env:Wap_Project_Path /p:Configuration=$env:Configuration # /p:UapAppxPackageBuildMode=$env:Appx_Package_Build_Mode /p:AppxBundle=$env:Appx_Bundle
+      run: |
+        msbuild $env:Wap_Project_Path /p:Configuration=$env:Configuration # /p:UapAppxPackageBuildMode=$env:Appx_Package_Build_Mode /p:AppxBundle=$env:Appx_Bundle
+        dotnet publish -c Release -r win10-x64 -p:PublishSingleFile=true --no-self-contained
       env:
         Appx_Bundle: Always
         Appx_Bundle_Platforms: x86|x64
@@ -113,4 +115,4 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: CenterTaskbar.${{ matrix.configuration }}
-        path: ${{ env.Wap_Project_Directory }}\bin\${{ matrix.configuration }}\CenterTaskbar.exe
+        path: ${{ env.Wap_Project_Directory }}\bin\${{ matrix.configuration }}\net5.0-windows\publish\CenterTaskbar.exe

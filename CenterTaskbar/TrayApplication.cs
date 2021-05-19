@@ -33,6 +33,8 @@ namespace CenterTaskbar
         private static readonly AutomationElement Desktop = AutomationElement.RootElement;
         private static AutomationEventHandler _uiaEventHandler;
         private static AutomationPropertyChangedEventHandler _propChangeHandler;
+        private static StructureChangedEventHandler _structChangeHandler;
+
 
         private readonly int _activeFramerate = DisplaySettings.CurrentRefreshRate();
         private readonly List<AutomationElement> _bars = new();
@@ -211,10 +213,15 @@ namespace CenterTaskbar
 
         private void Start()
         {
+            _propChangeHandler = OnUIAutomationEvent;
+            _structChangeHandler = OnUIAutomationEvent;
+            _uiaEventHandler = OnUIAutomationEvent;
+
             var condition = new OrCondition(new PropertyCondition(AutomationElement.ClassNameProperty, ShellTrayWnd),
                 new PropertyCondition(AutomationElement.ClassNameProperty, ShellSecondaryTrayWnd));
             var cacheRequest = new CacheRequest();
             cacheRequest.Add(AutomationElement.NameProperty);
+            cacheRequest.Add(AutomationElement.ClassNameProperty);
             cacheRequest.Add(AutomationElement.BoundingRectangleProperty);
 
             _bars.Clear();
@@ -232,20 +239,22 @@ namespace CenterTaskbar
 
                 Debug.WriteLine(lists.Count + " bar(s) detected");
                 _lasts.Clear();
+
+                Condition taskListProperty = new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass);
+
                 Parallel.ForEach(lists.OfType<AutomationElement>(), trayWnd =>
                 {
-                    var taskList = trayWnd.FindFirst(TreeScope.Descendants,
-                        new PropertyCondition(AutomationElement.ClassNameProperty, MSTaskListWClass));
+                    var taskList = trayWnd.FindFirst(TreeScope.Descendants, taskListProperty);
+
                     if (taskList == null)
                     {
                         Debug.WriteLine("Null values found, aborting");
                     }
                     else
                     {
-                        _propChangeHandler = OnUIAutomationEvent;
-                        Automation.AddAutomationPropertyChangedEventHandler(taskList, TreeScope.Element, _propChangeHandler,
+                        Automation.AddAutomationPropertyChangedEventHandler(taskList, TreeScope.Element | TreeScope.Children, _propChangeHandler,
                             AutomationElement.BoundingRectangleProperty);
-
+                        Automation.AddStructureChangedEventHandler(trayWnd, TreeScope.Element | TreeScope.Descendants | TreeScope.Children, _structChangeHandler);
                         _bars.Add(trayWnd);
                         _children.Add(trayWnd, taskList);
 
@@ -254,7 +263,6 @@ namespace CenterTaskbar
                 });
             }
 
-            _uiaEventHandler = OnUIAutomationEvent;
             Automation.AddAutomationEventHandler(WindowPattern.WindowOpenedEvent, Desktop, TreeScope.Subtree, _uiaEventHandler);
             Automation.AddAutomationEventHandler(WindowPattern.WindowClosedEvent, Desktop, TreeScope.Subtree, _uiaEventHandler);
         }
@@ -267,7 +275,13 @@ namespace CenterTaskbar
 
         private void OnUIAutomationEvent(object src, AutomationEventArgs e)
         {
-            Debug.Print("Event occured: {0}", e.EventId.ProgrammaticName);
+            if (e is AutomationPropertyChangedEventArgs)
+            {
+                Debug.Print("Event occured: {0} {1}", e.EventId.ProgrammaticName, (e as AutomationPropertyChangedEventArgs).Property.ProgrammaticName);
+            } else
+            {
+                Debug.Print("Event occured: {0}", e.EventId.ProgrammaticName);
+            }
             Parallel.ForEach(_bars.ToList(), trayWnd =>
             {
                 if (_positionThreads[trayWnd].IsCompleted)
@@ -509,16 +523,7 @@ namespace CenterTaskbar
             if (disposing)
             {
                 // Stop listening for new events
-                if (_uiaEventHandler != null)
-                {
-                    foreach (var taskBar in _children)
-                    {
-                        Automation.RemoveAutomationPropertyChangedEventHandler(taskBar.Value, _propChangeHandler);
-                    }
-
-                    Automation.RemoveAutomationEventHandler(WindowPattern.WindowOpenedEvent, Desktop, _uiaEventHandler);
-                    Automation.RemoveAutomationEventHandler(WindowPattern.WindowClosedEvent, Desktop, _uiaEventHandler);
-                }
+                Automation.RemoveAllEventHandlers();
 
                 // Put icons back
                 ResetAll();
