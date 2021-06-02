@@ -21,3 +21,4 @@ Specifically it will monitor for:
 * `WindowOpenedEvent`
 * `WindowClosedEvent`
 * `AutomationPropertyChangedEvent: BoundingRectangleProperty`
+* `StructureChangedEvent`
