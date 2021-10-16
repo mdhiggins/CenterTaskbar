@@ -7,6 +7,8 @@ assignees: ''
 
 ---
 
+Windows 11 will not be supported, please do not make another issue regarding this
+
 **Describe the bug**
 A clear and concise description of what the bug is.
 
