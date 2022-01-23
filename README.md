@@ -3,8 +3,8 @@
 ![Gif](https://user-images.githubusercontent.com/3608298/49901443-36234800-fe2f-11e8-89dd-9ab609a34fba.gif)
 
 ----
-## Windows 11
-* Windows 11 will not be supported. Underlying changes to the taskbar break the technique this program uses to center the icons so this solution no longer functions and since Windows 11 implements native centering there will be no updates to support Windows 11
+## Archived
+* Windows 11 will not be supported. Underlying changes to the taskbar break the technique this program uses to center the icons so this solution no longer functions and since Windows 11 implements native centering there will be no updates to support Windows 11. I've swithced to using StartAllBack which offers way more features and cleaner animations. Archiving this project for record purposes and it will remain available to use
 
 ## Features
 * Dynamic - works regardless of number of icons, DPI scaling grouping, size. All padding is calculated
